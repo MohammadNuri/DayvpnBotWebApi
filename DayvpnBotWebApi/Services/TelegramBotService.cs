@@ -1,6 +1,4 @@
 ﻿using DayvpnBotWebApi.Shared;
-using Microsoft.OpenApi.Extensions;
-using System.IO;
 using System.Text.RegularExpressions;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -13,10 +11,12 @@ namespace DayvpnBotWebApi.Services
     public class TelegramBotService : IHostedService
     {
         private readonly ITelegramBotClient _botClient;
+        private readonly IServiceScopeFactory _scopeFactory;
 
-        public TelegramBotService(ITelegramBotClient botClient)
+        public TelegramBotService(ITelegramBotClient botClient, IServiceScopeFactory scopeFactory)
         {
             _botClient = botClient;
+            _scopeFactory = scopeFactory;
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
@@ -49,6 +49,26 @@ namespace DayvpnBotWebApi.Services
             if (update?.Message?.Text != null)
             {
                 var message = update.Message;
+
+                using var scope = _scopeFactory.CreateScope();
+                var _userService = scope.ServiceProvider.GetRequiredService<UserService>();
+
+                // Register User
+                if (!await _userService.CheckUserExists(message.Chat.Id))
+                {
+                    Core.Entities.User user = new Core.Entities.User()
+                    {
+                        TelegramId = message.Chat.Id,
+                        FirstName = message.Chat.FirstName ?? string.Empty,
+                        LastName = message.Chat.LastName ?? string.Empty,
+                        RegistrationDate = DateTime.UtcNow,
+                    };
+
+                    ServiceResult result = await _userService.RegisterUser(user);
+
+                    Console.Write($"Success: {result.IsSuccess}");
+                    Console.Write($"Message: {result.Message}");
+                }
 
                 Console.OutputEncoding = System.Text.Encoding.UTF8; // فعال کردن UTF-8
 
