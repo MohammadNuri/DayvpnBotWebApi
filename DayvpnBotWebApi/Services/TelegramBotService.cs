@@ -40,7 +40,7 @@ namespace DayvpnBotWebApi.Services
 
         public Task StopAsync(CancellationToken cancellationToken)
         {
-            Console.WriteLine("ربات متوقف شد.");
+            Console.WriteLine("Bot Shutted Down");
             return Task.CompletedTask;
         }
 
@@ -49,7 +49,24 @@ namespace DayvpnBotWebApi.Services
             if (update?.Message?.Text != null)
             {
                 var message = update.Message;
-                Console.WriteLine($"New Message From {message.From?.FirstName}: {message.Text}");
+
+                Console.OutputEncoding = System.Text.Encoding.UTF8; // فعال کردن UTF-8
+
+                var originalColor = Console.ForegroundColor;
+
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.Write("📩 Message Received From: ");
+
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"{message.From.FirstName} {message.From.LastName}");
+
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write("📝 Text: ");
+
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine(message.Text);
+
+                Console.ForegroundColor = originalColor;
 
                 switch (message.Text.ToLower())
                 {
@@ -122,6 +139,10 @@ namespace DayvpnBotWebApi.Services
 
                     case "back-to-buy-subscription":
                         await BuySubscription(botClient, update.CallbackQuery, true);
+                        break;
+
+                    case "my_subscriptions":
+                        await MySubscriptions(botClient, update.CallbackQuery);
                         break;
 
                     case $"sub_1":
@@ -236,6 +257,35 @@ namespace DayvpnBotWebApi.Services
                             update.CallbackQuery,
                             "sub_8");
                         break;
+
+                    case string data when data.StartsWith("subscriptions_page_"):
+                        {
+                            int page = int.Parse(data.Replace("subscriptions_page_", ""));
+                            await ShowSubscriptionPage(botClient, update.CallbackQuery, page);
+                            break;
+                        }
+
+                    case string data when data.StartsWith("subscription_detail_"):
+                        {
+                            int index = int.Parse(data.Replace("subscription_detail_", ""));
+                            var sub = Subscriptions[index];
+
+                            await botClient.SendMessage(
+                                chatId: update.CallbackQuery.Message.Chat.Id,
+                                text: $"📄 اطلاعات اشتراک:\n\n🔹 نام: {sub.Name}\n📦 حجم: {sub.Volume}"
+                            );
+                            break;
+                        }
+
+                    case "subscriptions_close":
+                        {
+                            await botClient.DeleteMessage(
+                                chatId: update.CallbackQuery.Message.Chat.Id,
+                                messageId: update.CallbackQuery.Message.MessageId
+                            );
+                            break;
+                        }
+
                     default:
                         Console.WriteLine("Unknown Callback Data: " + update.CallbackQuery.Data);
                         break;
@@ -245,7 +295,36 @@ namespace DayvpnBotWebApi.Services
 
         private Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
         {
-            Console.WriteLine($"Error: {exception.Message}");
+            Console.OutputEncoding = System.Text.Encoding.UTF8; // برای پشتیبانی یونیکد
+
+            var originalColor = Console.ForegroundColor;
+
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("❌ Error Occurred!");
+
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write("📄 Message: ");
+
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine(exception.Message);
+
+            if (exception.InnerException != null)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkYellow;
+                Console.Write("🔁 Inner Exception Message: ");
+
+                Console.ForegroundColor = ConsoleColor.Gray;
+                Console.WriteLine(exception.InnerException.Message);
+
+                Console.ForegroundColor = ConsoleColor.DarkRed;
+                Console.Write("🔁 Inner Exception: ");
+
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine(exception.InnerException);
+            }
+
+            // بازگرداندن رنگ اولیه
+            Console.ForegroundColor = originalColor;
             return Task.CompletedTask;
         }
 
@@ -254,17 +333,7 @@ namespace DayvpnBotWebApi.Services
         private async Task Start(ITelegramBotClient botClient, Update update)
         {
             var message = update.Message;
-
-            string photoPath = Path.Combine(Directory.GetCurrentDirectory(), "Src", "Images", "DayVPN.jpg");
-            await using var stream = File.OpenRead(photoPath);
-            await botClient.SendPhoto(
-                chatId: message!.Chat.Id,
-                photo: new InputFileStream(stream, "DayVPN.jpg"),
-                caption: "🤖 خوش آمدید به ربات DayVPN!\r\n\r\n🔹 با این ربات، شما می‌توانید اشتراک وی‌پی‌ان خریداری کرده و از سرورهای متعدد با پروتکل‌های مختلف برای تغییر مکان خود استفاده کنید. \r\n\r\n📱 امکان اتصال در سیستم‌های اندروید، ویندوز، آیفون و دیگر دستگاه‌ها\r\n🌐 قابل استفاده بر روی تمامی انواع اینترنت‌ها\r\n             «🇩🇪 🇳🇱 🇺🇸 🇫🇷 🇹🇷 🇫🇮»\r\n\r\n🔻 برای شروع، یکی از گزینه‌های زیر را انتخاب کنید:",
-                parseMode: ParseMode.Markdown,
-                replyMarkup: new[] {InlineKeyboardButton.WithCallbackData("مدیریت اشتراک ها 🌐", "manage_subscriptions"),
-                                    InlineKeyboardButton.WithCallbackData("🛒 خرید اشتراک", "buy_subscription") }
-            );
+            await GlobalStart(botClient, message);
         }
 
         // start again
@@ -286,16 +355,55 @@ namespace DayvpnBotWebApi.Services
                     throw;
                 }
             }
+            else
+            {
+                await GlobalStart(botClient, message);
+            }
+        }
+
+        private async Task GlobalStart(ITelegramBotClient botClient, Message message)
+        {
+            string fullName = $"{message.Chat.FirstName} {message.Chat.LastName}";
+
+            string welcomeText = $"👋 سلام {fullName} عزیز!\n\n" +
+                     "🤖 به **ربات DayVPN** خوش اومدی!\n\n" +
+                     "📶 با DayVPN می‌تونی اشتراک VPN تهیه کنی و از سرورهای پرسرعت در کشورهای مختلف استفاده کنی.\n\n" +
+                     "📱 قابل استفاده در: اندروید، ویندوز، آیفون و سایر دستگاه‌ها\n" +
+                     "🌐 مناسب برای همه اینترنت‌ها: همراه اول، ایرانسل، رایتل، ADSL و ...\n" +
+                     "🌍 کشورهای پشتیبانی‌شده: 🇩🇪 🇳🇱 🇺🇸 🇫🇷 🇹🇷 🇫🇮\n\n" +
+                     "👇 برای شروع یکی از گزینه‌های زیر رو انتخاب کن:";
 
             string photoPath = Path.Combine(Directory.GetCurrentDirectory(), "Src", "Images", "DayVPN.jpg");
+
             await using var stream = File.OpenRead(photoPath);
+
+            var buttons = new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("📦 اشتراک‌های من", "my_subscriptions"),
+                    InlineKeyboardButton.WithCallbackData("🛒 خرید اشتراک", "buy_subscription")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("👤 پروفایل من", "my_profile"),
+                    InlineKeyboardButton.WithCallbackData("💰 افزایش موجودی", "increase_balance")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("❓ راهنما و کمک", "help"),
+                    InlineKeyboardButton.WithCallbackData("💬 پیام به پشتیبانی", "contact_support")
+                },
+            };
+
+            var keyboard = new InlineKeyboardMarkup(buttons);
+
             await botClient.SendPhoto(
                 chatId: message!.Chat.Id,
                 photo: new InputFileStream(stream, "DayVPN.jpg"),
-                caption: "🤖 خوش آمدید به ربات DayVPN!\r\n\r\n🔹 با این ربات، شما می‌توانید اشتراک وی‌پی‌ان خریداری کرده و از سرورهای متعدد با پروتکل‌های مختلف برای تغییر مکان خود استفاده کنید. \r\n\r\n📱 امکان اتصال در سیستم‌های اندروید، ویندوز، آیفون و دیگر دستگاه‌ها\r\n🌐 قابل استفاده بر روی تمامی انواع اینترنت‌ها\r\n             «🇩🇪 🇳🇱 🇺🇸 🇫🇷 🇹🇷 🇫🇮»\r\n\r\n🔻 برای شروع، یکی از گزینه‌های زیر را انتخاب کنید:",
+                caption: welcomeText,
                 parseMode: ParseMode.Markdown,
-                replyMarkup: new[] {InlineKeyboardButton.WithCallbackData("مدیریت اشتراک ها 🌐", "manage_subscriptions"),
-                                    InlineKeyboardButton.WithCallbackData("🛒 خرید اشتراک", "buy_subscription") }
+                replyMarkup: keyboard
             );
         }
 
@@ -433,8 +541,105 @@ namespace DayvpnBotWebApi.Services
             }
             else
             {
-                Console.WriteLine($"Message Received From: {message.From.FirstName} {message.From.FirstName} \n Message: {message.Text}");
+                Console.OutputEncoding = System.Text.Encoding.UTF8; // فعال کردن UTF-8
+
+                var originalColor = Console.ForegroundColor;
+
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.Write("📩 Trash Message Received From: ");
+
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"{message.From.FirstName} {message.From.LastName}");
+
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write("📝 Text: ");
+
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine(message.Text);
+
+                Console.ForegroundColor = originalColor;
             }
         }
+
+        private async Task MySubscriptions(ITelegramBotClient botClient, CallbackQuery callBackQuery)
+        {
+
+            await botClient.AnswerCallbackQuery(callBackQuery.Id);
+
+            const int page = 0;
+            var totalPages = (int)Math.Ceiling((double)Subscriptions.Count / 10);
+            var text = $"📦 اشتراک‌های شما - صفحه {page + 1} از {totalPages}";
+
+            var sentMessage = await botClient.SendMessage(
+                chatId: callBackQuery.Message.Chat.Id,
+                text: text,
+                replyMarkup: new InlineKeyboardMarkup(Array.Empty<InlineKeyboardButton[]>())
+            );
+
+            // ساخت CallbackQuery جدید با پیام واقعی که ارسال شده
+            var fakeCallback = new CallbackQuery
+            {
+                Message = sentMessage
+            };
+
+            await ShowSubscriptionPage(botClient, fakeCallback, page);
+        }
+
+        private async Task ShowSubscriptionPage(ITelegramBotClient botClient, CallbackQuery callbackQuery, int page = 0)
+        {
+            await botClient.AnswerCallbackQuery(callbackQuery.Id);
+
+            const int pageSize = 10;
+            var totalPages = (int)Math.Ceiling((double)Subscriptions.Count / pageSize);
+            page = Math.Clamp(page, 0, totalPages - 1);
+
+            // گرفتن 10 اشتراک صفحه فعلی
+            var pageItems = Subscriptions
+                .Skip(page * pageSize)
+                .Take(pageSize)
+                .Select((sub, index) => InlineKeyboardButton.WithCallbackData(
+                    $"{sub.Name} - {sub.Volume}",
+                    $"subscription_detail_{page * pageSize + index}"
+                ))
+                .ToList();
+
+            // ساخت دکمه‌ها: ۲ ستون × ۵ ردیف
+            var subscriptionRows = Enumerable.Range(0, 5)
+                .Select(i => new[]
+                {
+                    pageItems.ElementAtOrDefault(i),
+                    pageItems.ElementAtOrDefault(i + 5)
+                }
+                .Where(b => b != null).ToArray()) // فیلتر دکمه‌های null
+                .Where(row => row.Length > 0)
+                .ToList();
+
+            // دکمه‌های ناوبری
+            var navigationRow = new List<InlineKeyboardButton>();
+
+            if (page > 0)
+                navigationRow.Add(InlineKeyboardButton.WithCallbackData("◀️ قبلی", $"subscriptions_page_{page - 1}"));
+
+            if (page < totalPages - 1)
+                navigationRow.Add(InlineKeyboardButton.WithCallbackData("▶️ بعدی", $"subscriptions_page_{page + 1}"));
+
+            navigationRow.Add(InlineKeyboardButton.WithCallbackData("❌ بستن لیست", "subscriptions_close"));
+
+            subscriptionRows.Add(navigationRow.ToArray());
+
+            var markup = new InlineKeyboardMarkup(subscriptionRows);
+
+            // ویرایش پیام قبلی
+            await botClient.EditMessageText(
+                chatId: callbackQuery.Message.Chat.Id,
+                messageId: callbackQuery.Message.MessageId,
+                text: $"📦 اشتراک‌های شما - صفحه {page + 1} از {totalPages}",
+                replyMarkup: markup
+            );
+        }
+
+        private static readonly List<(string Name, string Volume)> Subscriptions = Enumerable.Range(1, 10)
+            .Select(i => ($"{i * 2} گیگ", $"Sub {i}"))
+            .ToList();
     }
 }
