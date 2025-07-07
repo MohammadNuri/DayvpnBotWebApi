@@ -1,4 +1,5 @@
 ﻿using DayvpnBotWebApi.Shared;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -50,25 +51,7 @@ namespace DayvpnBotWebApi.Services
             {
                 var message = update.Message;
 
-                using var scope = _scopeFactory.CreateScope();
-                var _userService = scope.ServiceProvider.GetRequiredService<UserService>();
-
-                // Register User
-                if (!await _userService.CheckUserExists(message.Chat.Id))
-                {
-                    Core.Entities.User user = new Core.Entities.User()
-                    {
-                        TelegramId = message.Chat.Id,
-                        FirstName = message.Chat.FirstName ?? string.Empty,
-                        LastName = message.Chat.LastName ?? string.Empty,
-                        RegistrationDate = DateTime.UtcNow,
-                    };
-
-                    ServiceResult result = await _userService.RegisterUser(user);
-
-                    Console.Write($"Success: {result.IsSuccess}");
-                    Console.Write($"Message: {result.Message}");
-                }
+                await SignupUserAsync(botClient, message);
 
                 Console.OutputEncoding = System.Text.Encoding.UTF8; // فعال کردن UTF-8
 
@@ -121,7 +104,7 @@ namespace DayvpnBotWebApi.Services
                         text: "✅ عکس پرداخت با موفقیت دریافت شد.\r\n🕓 لطفاً منتظر بمانید تا پرداخت شما توسط مدیریت بررسی و تأیید شود.\r\n📢 پس از تأیید، اطلاعات سرویس برای شما ارسال خواهد شد."
                     );
 
-                    // اطلاعات کاربر برای ادمین
+                    // اطلاعات کاربر برای ارسال به ادمین
                     string fullName = $"{message.Chat.FirstName} {message.Chat.LastName}";
                     string userId = message.Chat.Id.ToString();
                     string subInfo = SubscriptionHelper.GetSubCost(message.Chat.Id); // قیمت
@@ -130,12 +113,8 @@ namespace DayvpnBotWebApi.Services
 
                     // ارسال عکس به ادمین همراه با کپشن
                     using var adminStream = new MemoryStream(stream.ToArray()); // برای اطمینان دوباره بخونیم
-                    await botClient.SendPhoto(
-                        chatId: (long)Admins.Nouri,
-                        photo: new InputFileStream(adminStream, "payment.jpg"),
-                        caption: caption,
-                        parseMode: ParseMode.Markdown
-                    );
+
+                    await SendPhotoToAdminsAsync(botClient, adminStream, caption);
                 }
                 else
                 {
@@ -313,6 +292,31 @@ namespace DayvpnBotWebApi.Services
             }
         }
 
+        private async Task SignupUserAsync(ITelegramBotClient botClient, Message message)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var _userService = scope.ServiceProvider.GetRequiredService<UserService>();
+
+            // Register User
+            if (!await _userService.CheckUserExists(message.Chat.Id))
+            {
+                Core.Entities.User user = new Core.Entities.User()
+                {
+                    TelegramId = message.Chat.Id,
+                    FirstName = message.Chat.FirstName ?? string.Empty,
+                    LastName = message.Chat.LastName ?? string.Empty,
+                    RegistrationDate = DateTime.UtcNow,
+                    Balance = 0,
+                };
+
+                ServiceResult result = await _userService.RegisterUser(user);
+
+                await SendTextToAdminsAsync(botClient, result.Message);
+
+                Console.Write($"Success: {result.IsSuccess}");
+                Console.Write($"Message: {result.Message}");
+            }
+        }
         private Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8; // برای پشتیبانی یونیکد
@@ -658,8 +662,44 @@ namespace DayvpnBotWebApi.Services
             );
         }
 
+        // ارسال پیام به ادمین ها
+        private async Task SendTextToAdminsAsync(ITelegramBotClient botClient, string message)
+        {
+            long[] adminIds = { (long)Admins.Nouri /*, Admins.OtherAdminId if needed */ };
+
+            foreach (var adminId in adminIds)
+            {
+                await botClient.SendMessage(
+                    chatId: adminId,
+                    text: message,
+                    parseMode: ParseMode.Markdown
+                );
+            }
+        }
+
+        // ارسال عکس و متن به ادمین ها
+        private async Task SendPhotoToAdminsAsync(ITelegramBotClient botClient, Stream photoStream, string caption)
+        {
+            long[] adminIds = { (long)Admins.Nouri /*, Admins.OtherAdminId */ };
+
+            foreach (var adminId in adminIds)
+            {
+                using var streamCopy = new MemoryStream();
+                await photoStream.CopyToAsync(streamCopy);
+                streamCopy.Position = 0;
+
+                await botClient.SendPhoto(
+                    chatId: adminId,
+                    photo: new InputFileStream(streamCopy, "attachment.jpg"),
+                    caption: caption,
+                    parseMode: ParseMode.Markdown
+                );
+            }
+        }
+
         private static readonly List<(string Name, string Volume)> Subscriptions = Enumerable.Range(1, 10)
             .Select(i => ($"{i * 2} گیگ", $"Sub {i}"))
             .ToList();
+
     }
 }

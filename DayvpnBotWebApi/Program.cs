@@ -12,6 +12,9 @@ builder.Services.AddOpenApi();
 builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient("7720992933:AAF3Ektj8ICnQ92gJrIn0FKsYCxrgKqENeg"));
 builder.Services.AddHostedService<TelegramBotService>(); // سرویس Long Polling
 builder.Services.AddScoped<UserService>(); // User Service
+builder.Services.AddScoped<AppLogService>();
+builder.Services.AddScoped<SubscriptionService>();
+builder.Services.AddScoped<SubscriptionLinksService>();
 
 // Main DataBase
 builder.Services.AddDbContext<AppDbContext>(options =>
