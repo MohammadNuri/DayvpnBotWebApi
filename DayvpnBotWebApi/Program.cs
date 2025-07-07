@@ -6,7 +6,6 @@ using Telegram.Bot;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddOpenApi();
 
 // TelegramBot Service
 builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient("7720992933:AAF3Ektj8ICnQ92gJrIn0FKsYCxrgKqENeg"));
@@ -22,9 +21,16 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 var app = builder.Build();
 
+// Auto-Migration
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate(); 
+}
+
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+
 }
 
 app.UseHttpsRedirection();

@@ -1,6 +1,0 @@
-@DayvpnBotWebApi_HostAddress = http://localhost:5052
-
-GET {{DayvpnBotWebApi_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###

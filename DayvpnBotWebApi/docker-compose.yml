@@ -1,0 +1,44 @@
+﻿version: '3.9'
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver
+    environment:
+      SA_PASSWORD: ${SQL_PASSWORD}
+      ACCEPT_EULA: "Y"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sql_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "sqlcmd -S localhost -U sa -P $${SQL_PASSWORD} -Q 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  dayvpn-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dayvpn-bot
+    environment:
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=DayvpnDb;User Id=sa;Password=${SQL_PASSWORD};MultipleActiveResultSets=true;encrypt=true;trustServerCertificate=true;
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    volumes:
+      - nuget_cache:/root/.nuget/packages
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: always
+
+volumes:
+  sql_data:
+  nuget_cache:
