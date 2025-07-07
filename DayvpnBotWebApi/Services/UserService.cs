@@ -34,7 +34,7 @@ namespace DayvpnBotWebApi.Services
                 var affected = await _db.SaveChangesAsync();
                 if (affected > 0)
                 {
-                    return await _appLogService.LogUserRegisteredAsync(model.FirstName, model.LastName, (int)model.TelegramId);
+                    return await _appLogService.LogUserRegisteredAsync(model.FirstName, model.LastName, model.Id);
                 }
                 return ServiceResult.Failed("خطا در ایجاد کاربر.");
             }
