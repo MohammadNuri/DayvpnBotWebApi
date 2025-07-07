@@ -12,10 +12,10 @@ services:
     volumes:
       - sql_data:/var/opt/mssql
     healthcheck:
-      test: ["CMD-SHELL", "sqlcmd -S localhost -U sa -P $${SQL_PASSWORD} -Q 'SELECT 1'"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+        test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 125451254mS! -Q 'select 1'"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
     restart: always
 
   dayvpn-bot:
