@@ -144,6 +144,10 @@ namespace DayvpnBotWebApi.Services
                         await MySubscriptions(botClient, update.CallbackQuery);
                         break;
 
+                    case "increase_balance":
+                        await IncreaseBalance(botClient, update.CallbackQuery);
+                        break;
+
                     case $"sub_1":
                         await HandleBuySubscription(
                             botClient,
