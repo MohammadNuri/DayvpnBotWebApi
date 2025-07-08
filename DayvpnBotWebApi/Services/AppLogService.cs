@@ -29,7 +29,7 @@ namespace DayvpnBotWebApi.Services
                                     .FirstOrDefaultAsync(x => x.Id == id);
         }
 
-        public async Task<ServiceResult> CreateAsync(AppLog model)
+        public async Task<ServiceResult> CreateLogAsync(AppLog model)
         {
             try
             {
@@ -41,7 +41,6 @@ namespace DayvpnBotWebApi.Services
             }
             catch (Exception ex)
             {
-                // چون این سرویس خودش لاگ میکنه، می‌تونیم اینجا لاگ نزنی، یا لاگ فایلی بزنی اگر لازم بود
                 return ServiceResult.Failed($"خطا در ثبت لاگ: {ex.Message}");
             }
         }
@@ -123,5 +122,30 @@ namespace DayvpnBotWebApi.Services
             }
         }
 
+        public async Task LogAddBalanceSuccessAsync(int userId, decimal balance)
+        {
+            var log = new AppLog
+            {
+                UserId = userId,
+                EventType = LogEventType.BalanceIncreased,
+                Message = $"موجودی کاربر با موفقیت به {balance:N0} تومان افزایش یافت.",
+                CreatedAt = DateTime.Now
+            };
+
+            await CreateLogAsync(log);
+        }
+
+        public async Task LogAddBalanceFailureAsync(int userId, string errorMessage)
+        {
+            var log = new AppLog
+            {
+                UserId = userId,
+                EventType = LogEventType.Error,
+                Message = $"خطا در افزایش موجودی: {errorMessage}",
+                CreatedAt = DateTime.Now
+            };
+
+            await CreateLogAsync(log);
+        }
     }
 }

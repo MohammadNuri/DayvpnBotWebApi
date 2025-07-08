@@ -1,4 +1,6 @@
-﻿using DayvpnBotWebApi.Shared;
+﻿using DayvpnBotWebApi.Core.Entities;
+using DayvpnBotWebApi.Shared;
+using Microsoft.Extensions.Caching.Memory;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Telegram.Bot;
@@ -13,6 +15,7 @@ namespace DayvpnBotWebApi.Services
     {
         private readonly ITelegramBotClient _botClient;
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly IMemoryCache _memoryCache;
 
         public TelegramBotService(ITelegramBotClient botClient, IServiceScopeFactory scopeFactory)
         {
@@ -78,43 +81,60 @@ namespace DayvpnBotWebApi.Services
                         break;
 
                     default:
-                        await SetSubName(botClient, update);
+                        var state = CustomMemoryCash.GetUserState(message.Chat.Id);
+                        if (state != null && state == UserState.Buy_Subscription)
+                            await SetSubName(botClient, update);
+                        else if (state != null && state == UserState.Increase_Balance)
+                            await SetBalance(botClient, update);
                         break;
                 }
             }
             else if (update?.Message?.Photo != null)
             {
-                //Take Picture
+                //Take Pictures
                 var message = update.Message;
-                // بررسی اینکه کاربر اشتراک فعال داره
-                if (SubscriptionHelper.HasSub(message.Chat.Id))
+                if (CustomMemoryCash.GetUserState(message.Chat.Id) == UserState.Increase_Balance)
                 {
-                    var largestPhoto = message.Photo.Last();
-                    var file = await botClient.GetFile(largestPhoto.FileId);
+                    // بررسی اینکه کاربر اشتراک فعال داره
+                    if (CustomMemoryCash.HasBalanceRequest(message.Chat.Id))
+                    {
+                        var largestPhoto = message.Photo.Last();
+                        var file = await botClient.GetFile(largestPhoto.FileId);
 
-                    using var stream = new MemoryStream();
-                    await botClient.DownloadFile(file.FilePath, stream);
+                        try
+                        {
+                            using var stream = new MemoryStream();
+                            await botClient.DownloadFile(file.FilePath, stream);
 
-                    // ذخیره عکس در حافظه برای این کاربر
-                    SubscriptionHelper.SubmitPaymentPicture(message.From.Id, stream.ToArray());
+                            // ذخیره عکس در حافظه برای این کاربر
+                            CustomMemoryCash.SubmitPaymentPicture(message.From.Id, stream.ToArray());
 
-                    // پیام به خود کاربر
-                    await botClient.SendMessage(
-                        chatId: message.Chat.Id,
-                        text: "✅ عکس پرداخت با موفقیت دریافت شد.\r\n🕓 لطفاً منتظر بمانید تا پرداخت شما توسط مدیریت بررسی و تأیید شود.\r\n📢 پس از تأیید، اطلاعات سرویس برای شما ارسال خواهد شد."
-                    );
+                            // پیام به خود کاربر
+                            await botClient.SendMessage(
+                                chatId: message.Chat.Id,
+                                text: "✅ عکس پرداخت با موفقیت دریافت شد.\r\n🕓 لطفاً منتظر بمانید تا پرداخت شما توسط مدیریت بررسی و تأیید شود.\r\n📢."
+                            );
 
-                    // اطلاعات کاربر برای ارسال به ادمین
-                    string fullName = $"{message.Chat.FirstName} {message.Chat.LastName}";
-                    string userId = message.Chat.Id.ToString();
-                    string subInfo = SubscriptionHelper.GetSubCost(message.Chat.Id); // قیمت
+                            // اطلاعات کاربر برای ارسال به ادمین
+                            string fullName = $"{message.Chat.FirstName} {message.Chat.LastName ?? ""}".Trim();
+                            string userId = message.Chat.Id.ToString();
+                            string balance = CustomMemoryCash.GetRequestedBalance(message.Chat.Id); // قیمت
 
-                    string caption = $"📥 درخواست پرداخت جدید دریافت شد.\n\n👤 نام کاربر: {fullName}\n🆔 آیدی عددی: {userId}\n💳 پلن انتخابی: {subInfo}\n\n📌 لطفاً بررسی و تأیید کنید.";
+                            string caption = $"📥 درخواست پرداخت جدید دریافت شد.\n\n👤 نام کاربر: {fullName}\n🆔 آیدی عددی: {userId}\n💳 مبلغ: {balance}\n\n📌 لطفاً بررسی و تأیید کنید.";
 
-                    // ارسال عکس به ادمین همراه با کپشن
-                    using var adminStream = new MemoryStream(stream.ToArray()); // برای اطمینان دوباره بخونیم
+                            // ارسال عکس به ادمین همراه با کپشن
+                            using var adminStream = new MemoryStream(stream.ToArray()); // برای اطمینان دوباره بخونیم
 
-                    await SendPhotoToAdminsAsync(botClient, adminStream, caption);
+                            await SendConfirmPhotoToAdminsAsync(botClient, adminStream, caption, message.Chat.Id);
+                        }
+                        catch (Exception)
+                        {
+                            await botClient.SendMessage(
+                                chatId: message.Chat.Id,
+                                text: "❌ مشکلی در دریافت تصویر رخ داد. لطفاً دوباره تلاش کنید یا با پشتیبانی در تماس باشید."
+                            );
+                        }
+                    }
                 }
                 else
                 {
@@ -126,6 +146,73 @@ namespace DayvpnBotWebApi.Services
             }
             else if (update?.CallbackQuery != null)
             {
+                // تایید پرداخت
+                if (update.CallbackQuery.Data.StartsWith("confirm_payment"))
+                {
+                    await botClient.AnswerCallbackQuery(update.CallbackQuery.Id);
+
+                    if (!long.TryParse(update.CallbackQuery.Data.Split(':')[1], out long userId))
+                        await SendTextToAdminsAsync(botClient, "در تایید پرداخت خطایی رخ داده!!!");
+
+                    if (!CustomMemoryCash.HasBalanceRequest(userId))
+                        await SendTextToAdminsAsync(botClient, "کاربر در کش برای تایید پرداخت وجود ندارد!!!");
+
+                    var balanceRequest = CustomMemoryCash.GetBalanceRequest(userId);
+
+                    using var scope = _scopeFactory.CreateScope();
+                    var _userService = scope.ServiceProvider.GetRequiredService<UserService>();
+
+                    var result = await _userService.AddUserBalanceAsync(balanceRequest);
+
+                    if (!result.IsSuccess)
+                    {
+                        await SendTextToAdminsAsync(botClient,
+                             $"❌ افزایش موجودی *ناموفق* بود.\n\n👤 کاربر با آیدی عددی: `{balanceRequest.UserId}` در کش یافت نشد یا مشکلی رخ داده است.\n💳 مبلغ درخواستی: `{balanceRequest.Balance:N0}` تومان");
+
+                        await botClient.SendMessage(
+                            chatId: balanceRequest.UserId,
+                            text: """
+❌ متأسفانه افزایش موجودی شما با مشکل مواجه شد.
+
+لطفاً مجدداً تلاش کنید یا برای بررسی دقیق‌تر با پشتیبانی در ارتباط باشید.
+
+🆘 آیدی پشتیبانی: @DarvyXe
+""",
+                            parseMode: ParseMode.Markdown
+                        );
+                    }
+                    else
+                    {
+                        await SendTextToAdminsAsync(botClient,
+                            $"✅ افزایش موجودی با موفقیت انجام شد.\n\n👤 کاربر با آیدی عددی: `{balanceRequest.UserId}`\n💳 مبلغ افزوده شده: `{balanceRequest.Balance:N0}` تومان");
+
+                        await botClient.SendMessage(
+                            chatId: balanceRequest.UserId,
+                            text: $"🎉 موجودی شما با موفقیت افزایش یافت!\n\n💳 مبلغ: `{balanceRequest.Balance:N0}` تومان\n\nاز خرید شما سپاسگزاریم 🙏\nاکنون می‌توانید از خدمات ما استفاده کنید.",
+                            parseMode: ParseMode.Markdown
+                        );
+                    }
+                }
+                // عدم تایید پرداخت
+                if (update.CallbackQuery.Data.StartsWith("reject_payment"))
+                {
+                    await botClient.AnswerCallbackQuery(update.CallbackQuery.Id);
+
+                    await botClient.SendMessage(
+                        chatId: update.CallbackQuery.Message.Chat.Id, // این مقدار باید از callbackData استخراج بشه
+                        text: """
+❌ پرداخت شما تأیید نشد.
+
+ممکن است رسید ارسال‌شده نامعتبر یا ناقص بوده باشد، یا پرداختی در سیستم ثبت نشده باشد.
+
+🛠 لطفاً مجدداً رسید معتبر ارسال کنید یا برای بررسی بیشتر با پشتیبانی در تماس باشید.
+
+🆘 آیدی پشتیبانی: @DarvyXe
+""",
+                        parseMode: ParseMode.Markdown
+                    );
+                }
+
                 switch (update.CallbackQuery.Data)
                 {
                     case "buy_subscription":
@@ -288,7 +375,9 @@ namespace DayvpnBotWebApi.Services
                             );
                             break;
                         }
-
+                    case "my_profile":
+                        await SendProfileInfoAsync(botClient, update.CallbackQuery);
+                        break;
                     default:
                         Console.WriteLine("Unknown Callback Data: " + update.CallbackQuery.Data);
                         break;
@@ -524,8 +613,7 @@ namespace DayvpnBotWebApi.Services
             if (!Enum.TryParse<SubMode>("sub_1", out SubMode subMode))
                 Console.WriteLine("Cannot Find SubMode");
 
-
-            SubscriptionHelper.AddSub(message.Chat.Id, "", subMode);
+            CustomMemoryCash.AddSubscription(message.Chat.Id, "", subMode);
 
             await botClient.SendMessage(
                 chatId: message!.Chat.Id,
@@ -541,15 +629,15 @@ namespace DayvpnBotWebApi.Services
         {
             var message = update.Message;
 
-            if (SubscriptionHelper.HasSub(message.Chat.Id))
+            if (CustomMemoryCash.HasSubscription(message.Chat.Id))
             {
                 const string SubNameRegex = "^(?i)[a-z0-9 ]{1,30}$";
                 if (Regex.IsMatch(message.Text, SubNameRegex))
                 {
                     // Submit Sub Name
-                    SubscriptionHelper.SubmitSubName(message.Chat.Id, message.Text.Trim());
+                    CustomMemoryCash.SubmitSubscriptionName(message.Chat.Id, message.Text.Trim());
 
-                    string subCost = SubscriptionHelper.GetSubCost(message.Chat.Id);
+                    string subCost = CustomMemoryCash.GetRequestedBalance(message.Chat.Id);
 
                     string paymentText = $"2️⃣ پرداخت و تأیید نهایی\r\n\r\n📛 نام کانفیگ شما با موفقیت ثبت شد.\r\n📦 حالا نوبت پرداخت مبلغ سرویس شماست.\r\n\r\n💳 لطفاً مبلغ {subCost} تومان را به کارت زیر واریز فرمایید:\r\n\r\n🏦 بانک: بلو (BluBank)\r\n👤 نام صاحب حساب: محمد نوری\r\n💳 شماره کارت: 6219 8619 6361 0935\r\n\r\n\U0001f9fe پس از واریز، تصویر فیش پرداختی را برای ما ارسال کنید تا کانفیگ شما فعال شود.\r\n\r\n⚠️ لطفاً فیش واریزی را ارسال فرمایید.";
 
@@ -587,6 +675,86 @@ namespace DayvpnBotWebApi.Services
 
                 Console.ForegroundColor = originalColor;
             }
+        }
+
+        private async Task IncreaseBalance(ITelegramBotClient botClient, CallbackQuery callbackQuery)
+        {
+            await botClient.AnswerCallbackQuery(callbackQuery.Id);
+
+            var chatId = callbackQuery.Message.Chat.Id;
+
+            string message = """
+    💳 افزایش موجودی
+
+    💰 لطفاً مبلغ مورد نظر خود را *به تومان* وارد کنید:
+    🔹 مثال: `100000` (معادل ۱۰۰ هزار تومان)
+
+    ⚠️ لطفاً مبلغ را *کاملاً دقیق* و فقط به عدد وارد نمایید.
+    در صورتی که مبلغ نادرست وارد شود، پردازش افزایش موجودی ممکن است با *تأخیر* انجام شود.
+
+    🔐 پرداخت شما کاملاً امن بوده و اطلاعات محرمانه محفوظ می‌ماند.
+    """;
+
+            await botClient.SendMessage(
+                chatId: chatId,
+                text: message,
+                parseMode: ParseMode.Markdown
+            );
+
+            // به‌روزرسانی وضعیت کاربر برای مرحله بعد
+            CustomMemoryCash.AddBalance(chatId);
+        }
+
+
+        private async Task SetBalance(ITelegramBotClient botClient, Update update)
+        {
+            var message = update.Message;
+            var chatId = message.Chat.Id;
+
+            if (!long.TryParse(message.Text, out long amount))
+            {
+                await botClient.SendMessage(
+                    chatId: chatId,
+                    text: "❌ لطفاً فقط مبلغ را *به صورت عددی* وارد کنید.\nمثال: `100000`",
+                    parseMode: ParseMode.Markdown
+                );
+                return;
+            }
+
+            if (amount < 50000)
+            {
+                await botClient.SendMessage(
+                    chatId: chatId,
+                    text: "⚠️ حداقل مبلغ قابل واریز *۵۰٬۰۰۰ تومان* است.\nلطفاً مبلغ بیشتری وارد کنید.",
+                    parseMode: ParseMode.Markdown
+                );
+                return;
+            }
+
+            CustomMemoryCash.SetBalance(chatId, amount);
+
+            string rialAmount = (amount * 10).ToString("N0"); // چون هر تومان = 10 ریال
+
+            string chatMessage = $"""
+💳 مرحله پرداخت دستی
+
+کاربر گرامی، لطفاً مبلغ `{amount:N0}` تومان (معادل `{rialAmount}` ریال) را به کارت زیر واریز نمایید:
+
+🏦 *شماره کارت:* `0935 6361 8619 6219`  
+👤 *نام صاحب کارت:* محمد نوری
+
+⛔ *توجه مهم:*  
+از روش‌های «پل» خصوصاً با بانک‌هایی مانند *بلو بانک* استفاده نکنید.  
+در صورت استفاده از این روش‌ها، ممکن است پرداخت شما *ثبت نشود یا با تأخیر تایید شود.*
+
+📸 پس از انجام واریز، لطفاً *تصویر رسید واریز* را ارسال نمایید تا افزایش موجودی شما تأیید گردد.
+""";
+            await botClient.SendMessage(
+                chatId: chatId,
+                text: chatMessage,
+                parseMode: ParseMode.Markdown
+            );
+
         }
 
         private async Task MySubscriptions(ITelegramBotClient botClient, CallbackQuery callBackQuery)
@@ -682,9 +850,18 @@ namespace DayvpnBotWebApi.Services
         }
 
         // ارسال عکس و متن به ادمین ها
-        private async Task SendPhotoToAdminsAsync(ITelegramBotClient botClient, Stream photoStream, string caption)
+        private async Task SendConfirmPhotoToAdminsAsync(ITelegramBotClient botClient, Stream photoStream, string caption, long userId)
         {
             long[] adminIds = { (long)Admins.Nouri /*, Admins.OtherAdminId */ };
+
+            var keyboard = new InlineKeyboardMarkup(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("✅ تأیید پرداخت", $"confirm_payment:{userId}"),
+                    InlineKeyboardButton.WithCallbackData("❌ رد پرداخت", $"reject_payment:{userId}")
+                }
+            });
 
             foreach (var adminId in adminIds)
             {
@@ -696,9 +873,50 @@ namespace DayvpnBotWebApi.Services
                     chatId: adminId,
                     photo: new InputFileStream(streamCopy, "attachment.jpg"),
                     caption: caption,
-                    parseMode: ParseMode.Markdown
+                    parseMode: ParseMode.Markdown,
+                    replyMarkup: keyboard
                 );
             }
+        }
+
+        private async Task SendProfileInfoAsync(ITelegramBotClient botClient, CallbackQuery callbackQuery)
+        {
+            await botClient.AnswerCallbackQuery(callbackQuery.Id);
+
+            var chatId = callbackQuery.Message.Chat.Id;
+
+            using var scope = _scopeFactory.CreateScope();
+            var _userService = scope.ServiceProvider.GetRequiredService<UserService>();
+
+            var user = await _userService.GetUserProfileByTelegramIdAsync(chatId);
+            if (user == null)
+            {
+                await botClient.SendMessage(
+                    chatId: chatId,
+                    text: "❌ پروفایل شما یافت نشد.",
+                    parseMode: ParseMode.Markdown
+                );
+                return;
+            }
+
+            string message = $"""
+👤 *پروفایل شما*
+
+🧑‍💼 نام: *{user.FullName}*
+🆔 آیدی تلگرام: `{user.TelegramId}`
+
+🗓 تاریخ ثبت‌نام: {user.RegisterDate:yyyy/MM/dd}
+💳 موجودی: `{user.Balance:N0}` تومان
+📦 تعداد اشتراک‌ها: {user.SubscriptionCount}
+
+برای بروزرسانی اطلاعات یا دریافت پشتیبانی با ما در ارتباط باشید.
+""";
+
+            await botClient.SendMessage(
+                chatId: chatId,
+                text: message,
+                parseMode: ParseMode.Markdown
+            );
         }
 
         private static readonly List<(string Name, string Volume)> Subscriptions = Enumerable.Range(1, 10)

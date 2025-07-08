@@ -2,6 +2,7 @@
 using DayvpnBotWebApi.Core.Entities;
 using DayvpnBotWebApi.Shared;
 using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
 
 namespace DayvpnBotWebApi.Services
 {
@@ -100,6 +101,49 @@ namespace DayvpnBotWebApi.Services
         public async Task<bool> CheckUserExists(long telegramId)
         {
             return await _db.Users.AnyAsync(c => c.TelegramId == telegramId);
+        }
+
+        public async Task<ServiceResult> AddUserBalanceAsync(BalanceClassDTO balanceRequest)
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(c => c.TelegramId == balanceRequest.UserId);
+            if (user == null)
+            {
+                await _appLogService.LogAddBalanceFailureAsync((int)balanceRequest.UserId, "کاربر در دیتابیس یافت نشد.");
+                return ServiceResult.Failed("❌ کاربر مورد نظر برای افزایش موجودی پیدا نشد.");
+            }
+
+            user.Balance += balanceRequest.Balance;
+
+            try
+            {
+                await _db.SaveChangesAsync();
+                await _appLogService.LogAddBalanceSuccessAsync(user.Id, balanceRequest.Balance);
+                return ServiceResult.Success("✅ موجودی کاربر با موفقیت افزایش یافت.");
+            }
+            catch (Exception ex)
+            {
+                await _appLogService.LogAddBalanceFailureAsync(user.Id, $"خطا در ذخیره اطلاعات: {ex.Message}");
+                return ServiceResult.Failed("❌ خطا هنگام افزایش موجودی کاربر.");
+            }
+        }
+
+        public async Task<UserProfileDTO?> GetUserProfileByTelegramIdAsync(long telegramId)
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(c => c.TelegramId == telegramId);
+
+            if (user == null)
+                return null;
+
+            var subscriptionCount = await _db.Subscriptions.Where(c => c.UserId == user.Id).CountAsync();
+
+            return new UserProfileDTO()
+            {
+                FullName = user.FirstName + " " + user.LastName,
+                TelegramId = user.TelegramId,
+                Balance = user.Balance,
+                RegisterDate = user.RegistrationDate,
+                SubscriptionCount = subscriptionCount
+            };
         }
     }
 }
