@@ -1,5 +1,6 @@
 ﻿using DayvpnBotWebApi.Core.Entities;
 using DayvpnBotWebApi.Shared;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Memory;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
@@ -50,6 +51,8 @@ namespace DayvpnBotWebApi.Services
 
         private async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
         {
+            CustomMemoryCash.ClearExpiredCash();
+
             if (update?.Message?.Text != null)
             {
                 var message = update.Message;
@@ -109,12 +112,6 @@ namespace DayvpnBotWebApi.Services
                             // ذخیره عکس در حافظه برای این کاربر
                             CustomMemoryCash.SubmitPaymentPicture(message.From.Id, stream.ToArray());
 
-                            // پیام به خود کاربر
-                            await botClient.SendMessage(
-                                chatId: message.Chat.Id,
-                                text: "✅ عکس پرداخت با موفقیت دریافت شد.\r\n🕓 لطفاً منتظر بمانید تا پرداخت شما توسط مدیریت بررسی و تأیید شود.\r\n📢."
-                            );
-
                             // اطلاعات کاربر برای ارسال به ادمین
                             string fullName = $"{message.Chat.FirstName} {message.Chat.LastName ?? ""}".Trim();
                             string userId = message.Chat.Id.ToString();
@@ -126,6 +123,12 @@ namespace DayvpnBotWebApi.Services
                             using var adminStream = new MemoryStream(stream.ToArray()); // برای اطمینان دوباره بخونیم
 
                             await SendConfirmPhotoToAdminsAsync(botClient, adminStream, caption, message.Chat.Id);
+
+                            // پیام به خود کاربر
+                            await botClient.SendMessage(
+                                chatId: message.Chat.Id,
+                                text: "✅ عکس پرداخت با موفقیت دریافت شد.\r\n🕓 لطفاً منتظر بمانید تا پرداخت شما توسط مدیریت بررسی و تأیید شود.\r\n📢."
+                            );
                         }
                         catch (Exception)
                         {
@@ -152,10 +155,18 @@ namespace DayvpnBotWebApi.Services
                     await botClient.AnswerCallbackQuery(update.CallbackQuery.Id);
 
                     if (!long.TryParse(update.CallbackQuery.Data.Split(':')[1], out long userId))
+                    {
                         await SendTextToAdminsAsync(botClient, "در تایید پرداخت خطایی رخ داده!!!");
+                        await SendRestartMessageToUser(botClient, update.CallbackQuery);
+                        return;
+                    }
 
                     if (!CustomMemoryCash.HasBalanceRequest(userId))
+                    {
                         await SendTextToAdminsAsync(botClient, "کاربر در کش برای تایید پرداخت وجود ندارد!!!");
+                        await SendRestartMessageToUser(botClient, update.CallbackQuery);
+                        return;
+                    }
 
                     var balanceRequest = CustomMemoryCash.GetBalanceRequest(userId);
 
@@ -163,7 +174,6 @@ namespace DayvpnBotWebApi.Services
                     var _userService = scope.ServiceProvider.GetRequiredService<UserService>();
 
                     var result = await _userService.AddUserBalanceAsync(balanceRequest);
-
                     if (!result.IsSuccess)
                     {
                         await SendTextToAdminsAsync(botClient,
@@ -192,11 +202,26 @@ namespace DayvpnBotWebApi.Services
                             parseMode: ParseMode.Markdown
                         );
                     }
+                    CustomMemoryCash.ClearCash(userId);
                 }
                 // عدم تایید پرداخت
                 if (update.CallbackQuery.Data.StartsWith("reject_payment"))
                 {
                     await botClient.AnswerCallbackQuery(update.CallbackQuery.Id);
+
+                    if (!long.TryParse(update.CallbackQuery.Data.Split(':')[1], out long userId))
+                    {
+                        await SendTextToAdminsAsync(botClient, "در تایید پرداخت خطایی رخ داده!!!");
+                        await SendRestartMessageToUser(botClient, update.CallbackQuery);
+                        return;
+                    }
+
+                    if (!CustomMemoryCash.HasBalanceRequest(userId))
+                    {
+                        await SendTextToAdminsAsync(botClient, "کاربر در کش برای عدم تایید پرداخت وجود ندارد!!!");
+                        await SendRestartMessageToUser(botClient, update.CallbackQuery);
+                        return;
+                    }
 
                     await botClient.SendMessage(
                         chatId: update.CallbackQuery.Message.Chat.Id, // این مقدار باید از callbackData استخراج بشه
@@ -211,6 +236,7 @@ namespace DayvpnBotWebApi.Services
 """,
                         parseMode: ParseMode.Markdown
                     );
+                    CustomMemoryCash.ClearCash(update.CallbackQuery.Message.Chat.Id);
                 }
 
                 switch (update.CallbackQuery.Data)
@@ -384,6 +410,35 @@ namespace DayvpnBotWebApi.Services
                 }
             }
         }
+
+        private async Task SendRestartMessageToUser(ITelegramBotClient botClient, Message message)
+        {
+            string text = "❗ خطایی رخ داده یا زمان انجام عملیات شما منقضی شده است.\n\n" +
+                          "لطفاً با ارسال دستور /start مجدداً فرایند را از ابتدا آغاز کنید.\n\n" +
+                          "در صورت بروز مشکل، با پشتیبانی تماس بگیرید:\n" +
+                          "@DarvyXe";
+
+            await botClient.SendMessage(
+                chatId: message.Chat.Id,
+                text: text
+            );
+        }
+
+        private async Task SendRestartMessageToUser(ITelegramBotClient botClient, CallbackQuery callbackQuery)
+        {
+            var message = callbackQuery.Message;
+
+            string text = "❗ خطایی رخ داده یا زمان انجام عملیات شما منقضی شده است.\n\n" +
+                          "لطفاً با ارسال دستور /start مجدداً فرایند را از ابتدا آغاز کنید.\n\n" +
+                          "در صورت بروز مشکل، با پشتیبانی تماس بگیرید:\n" +
+                          "@DarvyXe";
+
+            await botClient.SendMessage(
+                chatId: message.Chat.Id,
+                text: text
+            );
+        }
+
 
         private async Task SignupUserAsync(ITelegramBotClient botClient, Message message)
         {

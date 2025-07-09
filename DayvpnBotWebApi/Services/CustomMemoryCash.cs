@@ -1,18 +1,18 @@
 ﻿using DayvpnBotWebApi.Shared;
-using System.Diagnostics.Eventing.Reader;
+using System.Collections.Concurrent;
 
 namespace DayvpnBotWebApi.Services
 {
     public static class CustomMemoryCash
     {
-        private static List<UserClass> _users = new List<UserClass>();
-
+        private static ConcurrentDictionary<long, UserClass> _users = new();
+        private static readonly int _expireTimeMinutes = 10;
         private class UserClass
         {
-            public long TelegramId { get; set; }
             public UserState State { get; set; } = UserState.None;
             public BalanceClass? BalanceRequest { get; set; }
             public SubscriptionClass? Subscription { get; set; } = null;
+            public DateTime CashExpireDateTime { get; set; } = DateTime.Now.AddMinutes(_expireTimeMinutes);
         }
 
         private class SubscriptionClass
@@ -24,110 +24,202 @@ namespace DayvpnBotWebApi.Services
         private class BalanceClass
         {
             public decimal Balance { get; set; } = 0;
-            public byte[]? PaymentImage { get; set; }        }
+            public byte[]? PaymentImage { get; set; }
+        }
+
+        public static void ClearExpiredCash()
+        {
+            foreach (var item in _users)
+            {
+                if (item.Value.CashExpireDateTime < DateTime.Now)
+                {
+                    if (_users.TryRemove(item.Key, out _))
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.Write("🧹 Expired Cash Removed: ");
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine($"UserId = {item.Key}, ExpiredAt = {item.Value.CashExpireDateTime:yyyy-MM-dd HH:mm:ss}");
+                        Console.ResetColor();
+                    }
+                }
+            }
+        }
+
+        public static void ClearCash(long userId)
+        {
+            if (_users.TryRemove(userId, out _))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.Write("🧹 User Cash Removed: ");
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"UserId = {userId}");
+                Console.ResetColor();
+            }
+        }
+
+        public static void RefreshCashExpireTime(long userId)
+        {
+            if (_users.TryGetValue(userId, out var user))
+            {
+                user.CashExpireDateTime = DateTime.Now.AddMinutes(_expireTimeMinutes);
+
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine($"⏳ CashExpireTime Refreshed | UserId: {userId} | New Expire: {user.CashExpireDateTime:HH:mm:ss}");
+                Console.ResetColor();
+            }
+        }
 
         public static void AddSubscription(long userId, string subName, SubMode subMode)
         {
-            _users.Add(new UserClass
+            var user = new UserClass
             {
-                TelegramId = userId,
                 State = UserState.Buy_Subscription,
                 Subscription = new SubscriptionClass()
                 {
                     SubMode = subMode,
                     SubName = subName,
                 }
-            });
+            };
+
+            _users.AddOrUpdate(userId, user, (key, existing) => user);
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"📦 Subscription Added | UserId: {userId} | SubName: {subName} | Mode: {subMode}");
+            Console.ResetColor();
         }
 
         public static void AddBalance(long userId)
         {
-            _users.Add(new UserClass
+            var user = new UserClass
             {
-                TelegramId = userId,
                 State = UserState.Increase_Balance,
-            });
+            };
+
+            _users.AddOrUpdate(userId, user, (key, existing) => user);
+            RefreshCashExpireTime(userId);
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"💰 Balance Request Added | UserId: {userId}");
+            Console.ResetColor();
         }
 
         public static bool HasSubscription(long userId)
         {
-            return _users.Any(x => x.TelegramId == userId && x.Subscription != null);
+            var result = _users.TryGetValue(userId, out var user) && user.Subscription != null;
+
+            Console.WriteLine($"🔎 HasSubscription Check | UserId: {userId} | Result: {result}");
+            return result;
         }
 
         public static bool HasBalanceRequest(long userId)
         {
-            return _users.Any(x => x.TelegramId == userId && x.BalanceRequest != null);
+            var result = _users.TryGetValue(userId, out var user) && user.BalanceRequest != null;
+
+            Console.WriteLine($"🔎 HasBalanceRequest Check | UserId: {userId} | Result: {result}");
+            return result;
         }
 
         public static void SubmitSubscriptionName(long userId, string subName)
         {
-            var sub = _users.Where(c => c.TelegramId == userId).Select(c => c.Subscription).FirstOrDefault();
-            if (sub != null)
-                sub.SubName = subName;
+            if (_users.TryGetValue(userId, out var user) && user.Subscription != null)
+            {
+                user.Subscription.SubName = subName;
+                RefreshCashExpireTime(userId);
+
+                Console.ForegroundColor = ConsoleColor.Magenta;
+                Console.WriteLine($"✏️ Subscription Name Updated | UserId: {userId} | New Name: {subName}");
+                Console.ResetColor();
+            }
         }
 
         public static string GetRequestedBalance(long userId)
         {
-            var balanceRequest = _users.Where(c => c.TelegramId == userId).Select(c => c.BalanceRequest).FirstOrDefault();
-            if (balanceRequest != null)
-                return balanceRequest.Balance.ToString("N0");
+            if (_users.TryGetValue(userId, out var user) && user.BalanceRequest != null)
+            {
+                Console.WriteLine($"📤 GetRequestedBalance | UserId: {userId} | Amount: {user.BalanceRequest.Balance}");
+                return user.BalanceRequest.Balance.ToString("N0");
+            }
+
+            Console.WriteLine($"⚠️ GetRequestedBalance | UserId: {userId} | No Balance Found");
             return "مبلغ نا مشخص! لطفا با ادمین هماهنگ کنید.. \n\n @DarvyXe";
         }
 
         public static void SubmitPaymentPicture(long userId, byte[] imageData)
         {
-            var userSub = _users.Where(c => c.TelegramId == userId).Select(c => c.BalanceRequest).FirstOrDefault();
-            if (userSub != null)
+            if (_users.TryGetValue(userId, out var user) && user.BalanceRequest != null)
             {
-                userSub.PaymentImage = imageData;
-                Console.WriteLine($"✅ عکس پرداخت برای کاربر {userId} ذخیره شد.");
+                user.BalanceRequest.PaymentImage = imageData;
+                RefreshCashExpireTime(userId);
+
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"✅ Payment Image Submitted | UserId: {userId}");
+                Console.ResetColor();
             }
             else
             {
-                Console.WriteLine($"❌ کاربر {userId} یافت نشد.");
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"❌ Payment Image Submit Failed | UserId: {userId} Not Found");
+                Console.ResetColor();
             }
         }
 
         public static void SetUserState(long userId, UserState state)
         {
-            var user = _users.Where(c => c.TelegramId == userId).FirstOrDefault();
-            if (user != null)
+            if (_users.TryGetValue(userId, out var user))
+            {
                 user.State = state;
+                RefreshCashExpireTime(userId);
 
-            Console.WriteLine($"SetUserState has been Called | UserId: {userId} | State: {state}");
+                Console.ForegroundColor = ConsoleColor.Blue;
+                Console.WriteLine($"🔄 User State Set | UserId: {userId} | State: {state}");
+                Console.ResetColor();
+            }
         }
 
         public static UserState? GetUserState(long userId)
         {
-            var user = _users.Where(c => c.TelegramId == userId).FirstOrDefault();
-            if (user != null)
+            if (_users.TryGetValue(userId, out var user))
+            {
+                Console.WriteLine($"📍 GetUserState | UserId: {userId} | State: {user.State}");
                 return user.State;
+            }
+
+            Console.WriteLine($"📍 GetUserState | UserId: {userId} Not Found");
             return null;
         }
-        
+
         public static void SetBalance(long userId, decimal balance)
         {
-            var user = _users.Where(c => c.TelegramId == userId).FirstOrDefault();
-            if(user != null && user.State == UserState.Increase_Balance)
+            if (_users.TryGetValue(userId, out var user) && user.State == UserState.Increase_Balance)
             {
                 user.BalanceRequest = new BalanceClass
                 {
                     Balance = balance,
                 };
+
+                RefreshCashExpireTime(userId);
+
+                Console.ForegroundColor = ConsoleColor.DarkYellow;
+                Console.WriteLine($"💳 Balance Set | UserId: {userId} | Amount: {balance}");
+                Console.ResetColor();
             }
         }
 
         public static BalanceClassDTO? GetBalanceRequest(long userId)
         {
-            var user = _users.Where(c => c.TelegramId == userId).FirstOrDefault();
-            if (user != null && user.State == UserState.Increase_Balance && user.BalanceRequest != null)
+            if (_users.TryGetValue(userId, out var user) &&
+                user.State == UserState.Increase_Balance &&
+                user.BalanceRequest != null)
             {
+                Console.WriteLine($"📤 GetBalanceRequest | UserId: {userId} | Amount: {user.BalanceRequest.Balance}");
                 return new BalanceClassDTO()
                 {
-                    UserId = user.TelegramId,
+                    UserId = userId,
                     Balance = user.BalanceRequest.Balance,
                 };
             }
+
+            Console.WriteLine($"⚠️ GetBalanceRequest | UserId: {userId} | No Balance Request Found");
             return null;
         }
     }
