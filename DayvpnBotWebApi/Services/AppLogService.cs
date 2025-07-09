@@ -122,52 +122,105 @@ namespace DayvpnBotWebApi.Services
             }
         }
 
-        public async Task LogAddBalanceSuccessAsync(int userId, decimal balance)
+        public async Task LogAddBalanceSuccessAsync(User user, decimal oldBalance, decimal requestedBalance, decimal newBalance)
         {
             var log = new AppLog
             {
-                UserId = userId,
+                UserId = user.Id,
                 EventType = LogEventType.BalanceIncreased,
-                Message = $"موجودی کاربر با موفقیت به {balance:N0} تومان افزایش یافت.",
+                Message = $"""
+                ✅ افزایش موجودی با موفقیت انجام شد.
+
+                👤 کاربر: {user.FirstName} {user.LastName}
+                🆔 Telegram ID: {user.TelegramId}
+                📱 شماره موبایل: {user.MobileNumber}
+
+                🔢 مبلغ درخواستی: {requestedBalance:N0} تومان
+                💰 موجودی قبلی: {oldBalance:N0} تومان
+                ➕ افزایش داده شده: {requestedBalance:N0} تومان
+                💳 موجودی جدید: {newBalance:N0} تومان
+
+                📅 زمان ثبت: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+                """,
                 CreatedAt = DateTime.Now
             };
 
             await CreateLogAsync(log);
         }
 
-        public async Task LogAddBalanceFailureAsync(int userId, string errorMessage)
+        public async Task LogAddBalanceFailureAsync(User user, decimal requestedBalance, string errorMessage)
         {
             var log = new AppLog
             {
-                UserId = userId,
+                UserId = user.Id,
                 EventType = LogEventType.Error,
-                Message = $"خطا در افزایش موجودی: {errorMessage}",
+                Message = $"""
+                ❌ خطا در افزایش موجودی!
+
+                👤 کاربر: {user.FirstName} {user.LastName}
+                🆔 Telegram ID: {user.TelegramId}
+                📱 شماره موبایل: {user.MobileNumber}
+
+                🔢 مبلغ درخواستی: {requestedBalance:N0} تومان
+                ⚠️ خطا: {errorMessage}
+
+                📅 زمان ثبت: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+                """,
                 CreatedAt = DateTime.Now
             };
 
             await CreateLogAsync(log);
         }
 
-        public async Task LogAddSubscriptionSuccessAsync(int userId, string subscriptionName, DateTime expirationDate)
+        public async Task LogAddSubscriptionSuccessAsync(User user, Subscription subscription, decimal oldBalance, decimal reducedBalance, decimal newBalance)
         {
             var log = new AppLog
             {
-                UserId = userId,
+                UserId = user.Id,
                 EventType = LogEventType.SubscriptionActivated,
-                Message = $"اشتراک '{subscriptionName}' با موفقیت برای کاربر ثبت شد. تاریخ انقضا: {expirationDate:yyyy/MM/dd}",
+                Message = $"""
+                ✅ خرید اشتراک با موفقیت انجام شد.
+
+                👤 کاربر: {user.FirstName} {user.LastName}
+                🆔 Telegram ID: {user.TelegramId}
+                📱 شماره موبایل: {user.MobileNumber}
+
+                🔖 نام اشتراک: {subscription.SubscriptionName}
+                📦 حجم: {subscription.SubscriptionVolumeGb} گیگابایت
+                👥 تعداد کاربران مجاز: {subscription.Service.AllowedUsersCount} نفر
+                ⏳ مدت زمان اشتراک: {subscription.Service.DurationInDays} روز
+                📅 تاریخ فعال‌سازی: {subscription.ActivationDate?.ToString("yyyy-MM-dd HH:mm:ss")}
+                📅 تاریخ انقضا: {subscription.ExpirationDate:yyyy-MM-dd HH:mm:ss}
+
+                💳 مبلغ کسر شده: {reducedBalance:N0} تومان
+                💰 موجودی قبلی: {oldBalance:N0} تومان
+                💰 موجودی جدید: {newBalance:N0} تومان
+
+                📅 زمان ثبت: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+                """,
                 CreatedAt = DateTime.Now
             };
 
             await CreateLogAsync(log);
         }
 
-        public async Task LogAddSubscriptionFailureAsync(int userId, string errorMessage)
+        public async Task LogAddSubscriptionFailureAsync(User user, string errorMessage)
         {
             var log = new AppLog
             {
-                UserId = userId,
+                UserId = user.Id,
                 EventType = LogEventType.Error,
-                Message = $"خطا در ثبت اشتراک برای کاربر: {errorMessage}",
+                Message = $"""
+                ❌ خطا در ثبت اشتراک برای کاربر!
+
+                👤 کاربر: {user.FirstName} {user.LastName}
+                🆔 Telegram ID: {user.TelegramId}
+                📱 شماره موبایل: {user.MobileNumber}
+
+                ⚠️ خطا: {errorMessage}
+
+                📅 زمان ثبت: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+                """,
                 CreatedAt = DateTime.Now
             };
 

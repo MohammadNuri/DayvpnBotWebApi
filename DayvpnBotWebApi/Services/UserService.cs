@@ -108,22 +108,23 @@ namespace DayvpnBotWebApi.Services
             var user = await _db.Users.FirstOrDefaultAsync(c => c.TelegramId == balanceRequest.UserId);
             if (user == null)
             {
-                await _appLogService.LogAddBalanceFailureAsync((int)balanceRequest.UserId, "کاربر در دیتابیس یافت نشد.");
+                await _appLogService.LogAddBalanceFailureAsync(user, balanceRequest.Balance, "کاربر در دیتابیس یافت نشد.");
                 return ServiceResult<decimal>.Failed("❌ کاربر مورد نظر برای افزایش موجودی پیدا نشد.");
             }
 
+            var oldBalance = user.Balance;
             user.Balance += balanceRequest.Balance;
 
             try
             {
                 await _db.SaveChangesAsync();
-                await _appLogService.LogAddBalanceSuccessAsync(user.Id, balanceRequest.Balance);
+                await _appLogService.LogAddBalanceSuccessAsync(user, oldBalance, balanceRequest.Balance, user.Balance);
                 CustomMemoryCash.ClearCash(user.TelegramId);
                 return ServiceResult<decimal>.Success(user.Balance, "✅ موجودی کاربر با موفقیت افزایش یافت.");
             }
             catch (Exception ex)
             {
-                await _appLogService.LogAddBalanceFailureAsync(user.Id, $"خطا در ذخیره اطلاعات: {ex.Message}");
+                await _appLogService.LogAddBalanceFailureAsync(user, balanceRequest.Balance, $"خطا در ذخیره اطلاعات: {ex.Message}");
                 return ServiceResult<decimal>.Failed("❌ خطا هنگام افزایش موجودی کاربر.");
             }
         }

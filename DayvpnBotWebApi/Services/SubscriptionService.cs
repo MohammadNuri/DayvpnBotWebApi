@@ -149,7 +149,7 @@ namespace DayvpnBotWebApi.Services
                 };
 
                 await _db.Subscriptions.AddAsync(subscription);
-
+                var oldBalance = user.Balance;
                 user.Balance -= service.Price;
 
                 await _db.SaveChangesAsync();
@@ -158,7 +158,7 @@ namespace DayvpnBotWebApi.Services
                 Console.WriteLine($"✅ Subscription خریداری شد: UserId={user.Id}, ServiceId={service.Id}, Volume={service.DataQuotaGB}GB");
                 Console.ResetColor();
 
-                await _appLogService.LogAddSubscriptionSuccessAsync(user.Id, subscription.SubscriptionName, subscription.ExpirationDate);
+                await _appLogService.LogAddSubscriptionSuccessAsync(user, subscription, oldBalance, service.Price, user.Balance);
 
                 CustomMemoryCash.ClearCash(telegramId);
                 return ServiceResult<SubscriptionResultDto>.Success(new SubscriptionResultDto()
@@ -187,7 +187,7 @@ namespace DayvpnBotWebApi.Services
                 Console.WriteLine($"❌ خطا در خرید Subscription: {ex.Message}");
                 Console.ResetColor();
 
-                await _appLogService.LogAddSubscriptionFailureAsync(user?.Id ?? 0, ex.Message);
+                await _appLogService.LogAddSubscriptionFailureAsync(user, ex.Message);
                 CustomMemoryCash.ClearCash(telegramId);
 
                 return ServiceResult<SubscriptionResultDto>.Failed("""

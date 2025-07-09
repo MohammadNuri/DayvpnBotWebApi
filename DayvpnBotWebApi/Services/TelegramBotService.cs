@@ -2,6 +2,7 @@
 using DayvpnBotWebApi.Shared;
 using Microsoft.AspNetCore.Localization;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.OpenApi.Services;
 using System.Text.RegularExpressions;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -141,13 +142,6 @@ namespace DayvpnBotWebApi.Services
                         }
                     }
                 }
-                else
-                {
-                    await botClient.SendMessage(
-                        chatId: message.Chat.Id,
-                        text: "❌ خطای رخ داده لطفا مراحل رو از ابتدا شروع کنید و یا با ادمین هماهنگ کنید"
-                    );
-                }
             }
             else if (update?.CallbackQuery != null)
             {
@@ -248,7 +242,17 @@ namespace DayvpnBotWebApi.Services
                         break;
 
                     case "my_subscriptions":
-                        await MySubscriptions(botClient, update.CallbackQuery);
+                        //Todo 
+                        //await MySubscriptions(botClient, update.CallbackQuery);
+                        await SendDevelopingTextToUserAsync(botClient, update.CallbackQuery);
+                        break;
+                        //Todo
+                    case "help":
+                        await SendDevelopingTextToUserAsync(botClient, update.CallbackQuery);
+                        break;
+                        //Todo
+                    case "contact_support":
+                        await SendDevelopingTextToUserAsync(botClient, update.CallbackQuery);
                         break;
 
                     case "increase_balance":
@@ -300,6 +304,9 @@ namespace DayvpnBotWebApi.Services
                         }
                     case "my_profile":
                         await SendProfileInfoAsync(botClient, update.CallbackQuery);
+                        break;
+                    case "confirm_purchase":
+                        await ConfirmPurchaseSubscription(botClient, update.CallbackQuery);
                         break;
                     default:
                         Console.WriteLine("Unknown Callback Data: " + update.CallbackQuery.Data);
@@ -694,24 +701,77 @@ namespace DayvpnBotWebApi.Services
                 if (Regex.IsMatch(message.Text, SubNameRegex))
                 {
                     CustomMemoryCash.SubmitSubscriptionName(message.Chat.Id, message.Text.Trim('_'));
+                    var subscriptionRequest = CustomMemoryCash.GetSubscriptionRequest(message.Chat.Id);
 
-                    // Validate Balance and Insert Subscription into Database
-                    using var scope = _scopeFactory.CreateScope();
-                    var _subscriptionService = scope.ServiceProvider.GetRequiredService<SubscriptionService>();
-
-                    var result = await _subscriptionService.InsertSubscription(message.Chat.Id);
-
-                    await botClient.SendMessage(
-                        chatId: message.Chat.Id,
-                        text: result.Message,
-                        parseMode: ParseMode.Markdown
-                        );
-
-                    if (result.IsSuccess && result is ServiceResult<SubscriptionResultDto> successResult)
+                    if (subscriptionRequest != null)
                     {
-                        var data = successResult.Data!;
+                        using var scope = _scopeFactory.CreateScope();
+                        var _servicesService = scope.ServiceProvider.GetRequiredService<ServicesService>();
 
-                        string adminMessage = $"""
+                        var service = await _servicesService.GetByIdAsync(subscriptionRequest.ServiceId);
+
+                        var previewText = $"""
+                        📝 *بررسی نهایی اطلاعات اشتراک*
+
+                        📛 نام انتخابی: `{subscriptionRequest.SubscriptionName}`
+                        🔹 سرویس: *{service.Name}*
+                        📦 حجم: `{service.DataQuotaGB}` گیگابایت  
+                        ⏳ مدت زمان: `{service.DurationInDays}` روز  
+                        👥 کاربران مجاز: `{service.AllowedUsersCount}` نفر  
+                        💳 مبلغ قابل پرداخت: `{service.Price:N0}` تومان
+
+                        لطفاً در صورت صحیح بودن اطلاعات، دکمه زیر را برای اتمام خرید انتخاب کنید.
+                        """;
+
+                        await botClient.SendMessage(
+                            chatId: message.Chat.Id,
+                            text: previewText,
+                            parseMode: ParseMode.Markdown,
+                            replyMarkup: new InlineKeyboardMarkup(new[]
+                            {
+                                InlineKeyboardButton.WithCallbackData("✅ تایید نهایی و خرید", $"confirm_purchase")
+                            })
+                        );
+                    }
+                }
+                else
+                {
+                    await botClient.SendMessage(
+                        chatId: message!.Chat.Id,
+                        text: "❌ نام وارد شده نامعتبر است.\r\nفقط حروف انگلیسی (A-Z)، اعداد (0-9) و فاصله مجاز هستند.\r\nحداکثر طول مجاز: 30 کاراکتر.\r\n\r\nلطفا مجدد وارد کنید..",
+                        parseMode: ParseMode.Markdown);
+                }
+            }
+            else
+            {
+                await SendRestartMessageToUser(botClient, message);
+            }
+        }
+
+        private async Task ConfirmPurchaseSubscription(ITelegramBotClient botClient, CallbackQuery callbackQuery)
+        {
+            await botClient.AnswerCallbackQuery(callbackQuery.Id);
+            var message = callbackQuery.Message;
+
+            if (CustomMemoryCash.HasSubscription(message.Chat.Id))
+            {
+                // Validate Balance and Insert Subscription into Database
+                using var scope = _scopeFactory.CreateScope();
+                var _subscriptionService = scope.ServiceProvider.GetRequiredService<SubscriptionService>();
+
+                var result = await _subscriptionService.InsertSubscription(message.Chat.Id);
+
+                await botClient.SendMessage(
+                    chatId: message.Chat.Id,
+                    text: result.Message,
+                    parseMode: ParseMode.Markdown
+                    );
+
+                if (result.IsSuccess && result is ServiceResult<SubscriptionResultDto> successResult)
+                {
+                    var data = successResult.Data!;
+
+                    string adminMessage = $"""
                         ✅ *خرید سرویس جدید با موفقیت ثبت شد!*
                         
                         👤 کاربر: *{data.UserFullName}*  
@@ -728,25 +788,17 @@ namespace DayvpnBotWebApi.Services
                         📌 لطفاً کانفیگ سرویس را برای کاربر ارسال کنید.
                         """;
 
-                        await SendTextToAdminsAsync(botClient,
-                            adminMessage,
-                            new List<AdminActionButton>
-                            {
+                    await SendTextToAdminsAsync(botClient,
+                        adminMessage,
+                        new List<AdminActionButton>
+                        {
                                 new("📤 ارسال کانفیگ به کاربر", $"send_config_{message.Chat.Id}")
-                            });
-                    }
-                }
-                else
-                {
-                    await botClient.SendMessage(
-                        chatId: message!.Chat.Id,
-                        text: "❌ نام وارد شده نامعتبر است.\r\nفقط حروف انگلیسی (A-Z)، اعداد (0-9) و فاصله مجاز هستند.\r\nحداکثر طول مجاز: 30 کاراکتر.\r\n\r\nلطفا مجدد وارد کنید..",
-                        parseMode: ParseMode.Markdown);
+                        });
                 }
             }
             else
             {
-                await SendRestartMessageToUser(botClient, message);
+                await SendRestartMessageToUser(botClient, callbackQuery);
             }
         }
 
@@ -1012,6 +1064,31 @@ namespace DayvpnBotWebApi.Services
                 text: message,
                 parseMode: ParseMode.Markdown,
                 replyMarkup: keyboard
+            );
+        }
+
+        private async Task SendDevelopingTextToUserAsync(ITelegramBotClient botClient, CallbackQuery callbackQuery)
+        {
+            var message = callbackQuery.Message;
+
+            var textMessage = """
+             🚧 *این بخش در حال توسعه است!*
+
+             این قابلیت هنوز آماده نشده و به‌زودی در دسترس شما قرار خواهد گرفت.  
+             تیم ما با تمام توان در حال آماده‌سازی این بخش است. ⏳
+
+             در حال حاضر می‌توانید از بخش‌های زیر استفاده کنید:
+             🔹 خرید اشتراک  
+             🔹 افزایش موجودی  
+             🔹 پروفایل من
+
+             ممنون از همراهی و شکیبایی شما 💙
+             """;
+
+            await botClient.SendMessage(
+                chatId: message.Chat.Id,
+                text: textMessage,
+                parseMode: ParseMode.Markdown
             );
         }
 
