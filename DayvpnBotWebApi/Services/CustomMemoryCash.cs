@@ -10,8 +10,9 @@ namespace DayvpnBotWebApi.Services
         private class UserClass
         {
             public UserState State { get; set; } = UserState.None;
-            public BalanceClass? BalanceRequest { get; set; }
+            public BalanceClass? BalanceRequest { get; set; } = null;
             public SubscriptionClass? Subscription { get; set; } = null;
+            public long? TelegramId { get; set; } = null;
             public DateTime CashExpireDateTime { get; set; } = DateTime.Now.AddMinutes(_expireTimeMinutes);
         }
 
@@ -25,6 +26,24 @@ namespace DayvpnBotWebApi.Services
         {
             public decimal Balance { get; set; } = 0;
             public byte[]? PaymentImage { get; set; }
+        }
+
+        public static long? GetAssignedTelegramIdForSendConfig(long userId)
+        {
+            if (_users.TryGetValue(userId, out var user) && user.TelegramId.HasValue)
+                return user.TelegramId.Value;
+            return null;
+        }
+
+        public static void AssignAdminToSendConfig(long adminUserId, long userTelegramId)
+        {
+            var user = new UserClass
+            {
+                State = UserState.Send_User_Config,
+                TelegramId = userTelegramId,
+            };
+
+            _users.AddOrUpdate(adminUserId, user, (key, existing) => user);
         }
 
         public static void ClearExpiredCash()

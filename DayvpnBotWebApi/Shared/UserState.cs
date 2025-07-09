@@ -5,5 +5,6 @@
         None,
         Buy_Subscription,
         Increase_Balance,
+        Send_User_Config,
     }
 }

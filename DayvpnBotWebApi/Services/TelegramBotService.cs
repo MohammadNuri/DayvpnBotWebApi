@@ -8,6 +8,7 @@ using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace DayvpnBotWebApi.Services
 {
@@ -88,6 +89,8 @@ namespace DayvpnBotWebApi.Services
                             await SetSubName(botClient, update);
                         else if (state != null && state == UserState.Increase_Balance)
                             await SetBalance(botClient, update);
+                        else if (state != null && message.Chat.Id == (long)Admins.Nouri && state == UserState.Send_User_Config)
+                            await DeliverConfigToUserAsync(botClient, update);
                         break;
                 }
             }
@@ -282,6 +285,11 @@ namespace DayvpnBotWebApi.Services
                             break;
                         }
 
+                    case string data when data.StartsWith("send_config"):
+                        if (update.CallbackQuery.Message.Chat.Id == (long)Admins.Nouri)
+                            await InitiateConfigSendToUserAsync(botClient, update.CallbackQuery, data);
+                        break;
+
                     case "subscriptions_close":
                         {
                             await botClient.DeleteMessage(
@@ -298,6 +306,75 @@ namespace DayvpnBotWebApi.Services
                         break;
                 }
             }
+        }
+
+        private async Task InitiateConfigSendToUserAsync(ITelegramBotClient botClient, CallbackQuery callbackQuery, string data)
+        {
+            await botClient.AnswerCallbackQuery(callbackQuery.Id);
+
+            if (!long.TryParse(data.Split('_')[2], out long userTelegramId))
+            {
+                // پیام خطا برای ادمین
+                await SendTextToAdminsAsync(botClient, """
+                ⚠️ *خطا در ارسال کانفیگ!*
+
+                ❌ شناسه کاربر به درستی استخراج نشد.  
+                لطفاً مجدداً تلاش کنید یا با پشتیبانی تماس بگیرید.
+                """);
+                return;
+            }
+
+            CustomMemoryCash.AssignAdminToSendConfig((long)Admins.Nouri, userTelegramId);
+
+            // پیام راهنما برای ادمین
+            await SendTextToAdminsAsync(botClient, $"""
+            ✅ *حالت ارسال کانفیگ فعال شد!*
+
+            لطفاً *متن کامل کانفیگ* را به صورت *ریپلای* به این پیام ارسال کنید.  
+            ربات به صورت خودکار آن را برای کاربر مورد نظر فوروارد خواهد کرد.
+
+            👤 Telegram ID: `{userTelegramId}`
+            """);
+        }
+
+        private async Task DeliverConfigToUserAsync(ITelegramBotClient botClient, Update update)
+        {
+            var message = update.Message;
+
+            var userTelegramId = CustomMemoryCash.GetAssignedTelegramIdForSendConfig(message.Chat.Id);
+
+            if (userTelegramId.HasValue)
+            {
+                await botClient.SendMessage(
+                    chatId: userTelegramId,
+                    text: message.Text!
+                );
+
+                await botClient.SendMessage(
+                    chatId: message.Chat.Id,
+                    text: "✅ *کانفیگ با موفقیت برای کاربر ارسال شد.*\n\nممنون از همکاری شما 🙏",
+                    parseMode: ParseMode.Markdown
+                );
+            }
+            else
+            {
+                await botClient.SendMessage(
+                    chatId: message.Chat.Id,
+                    text: """
+                    ⚠️ *خطا در ارسال کانفیگ!*
+
+                    اطلاعات کاربری برای ارسال کانفیگ در حافظه یافت نشد.  
+                    احتمالاً زمان شما منقضی شده یا مرحله‌ی قبل به‌درستی انجام نشده است.
+
+                    لطفاً ابتدا دکمه‌ی `ارسال کانفیگ` را در پیام خرید کلیک کرده و سپس پیام را ارسال کنید.
+
+                    🆘 در صورت مشکل، با توسعه‌دهنده تماس بگیرید.
+                    """,
+                    parseMode: ParseMode.Markdown
+                );
+            }
+
+            CustomMemoryCash.ClearCash(message.Chat.Id);
         }
 
         private async Task SendRestartMessageToUser(ITelegramBotClient botClient, Message message)
@@ -651,7 +728,12 @@ namespace DayvpnBotWebApi.Services
                         📌 لطفاً کانفیگ سرویس را برای کاربر ارسال کنید.
                         """;
 
-                        await SendTextToAdminsAsync(botClient, adminMessage);
+                        await SendTextToAdminsAsync(botClient,
+                            adminMessage,
+                            new List<AdminActionButton>
+                            {
+                                new("📤 ارسال کانفیگ به کاربر", $"send_config_{message.Chat.Id}")
+                            });
                     }
                 }
                 else
@@ -836,6 +918,26 @@ namespace DayvpnBotWebApi.Services
                     chatId: adminId,
                     text: message,
                     parseMode: ParseMode.Markdown
+                );
+            }
+        }
+
+        public record AdminActionButton(string Text, string CallbackData);
+        private async Task SendTextToAdminsAsync(ITelegramBotClient botClient, string message, List<AdminActionButton> replyMarkups)
+        {
+            long[] adminIds = { (long)Admins.Nouri };
+
+            var buttons = replyMarkups
+                .Select(btn => new[] { InlineKeyboardButton.WithCallbackData(btn.Text, btn.CallbackData) })
+                .ToList();
+
+            foreach (var adminId in adminIds)
+            {
+                await botClient.SendMessage(
+                    chatId: adminId,
+                    text: message,
+                    parseMode: ParseMode.Markdown,
+                    replyMarkup: new InlineKeyboardMarkup(buttons)
                 );
             }
         }
