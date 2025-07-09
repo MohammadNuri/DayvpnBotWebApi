@@ -147,5 +147,31 @@ namespace DayvpnBotWebApi.Services
 
             await CreateLogAsync(log);
         }
+
+        public async Task LogAddSubscriptionSuccessAsync(int userId, string subscriptionName, DateTime expirationDate)
+        {
+            var log = new AppLog
+            {
+                UserId = userId,
+                EventType = LogEventType.SubscriptionActivated,
+                Message = $"اشتراک '{subscriptionName}' با موفقیت برای کاربر ثبت شد. تاریخ انقضا: {expirationDate:yyyy/MM/dd}",
+                CreatedAt = DateTime.Now
+            };
+
+            await CreateLogAsync(log);
+        }
+
+        public async Task LogAddSubscriptionFailureAsync(int userId, string errorMessage)
+        {
+            var log = new AppLog
+            {
+                UserId = userId,
+                EventType = LogEventType.Error,
+                Message = $"خطا در ثبت اشتراک برای کاربر: {errorMessage}",
+                CreatedAt = DateTime.Now
+            };
+
+            await CreateLogAsync(log);
+        }
     }
 }

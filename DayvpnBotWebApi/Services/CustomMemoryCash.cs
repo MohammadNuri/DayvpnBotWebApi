@@ -17,8 +17,8 @@ namespace DayvpnBotWebApi.Services
 
         private class SubscriptionClass
         {
-            public string SubName { get; set; } = string.Empty;
-            public SubMode SubMode { get; set; }
+            public string SubscriptionName { get; set; } = string.Empty;
+            public int ServiceId { get; set; }
         }
 
         private class BalanceClass
@@ -69,22 +69,22 @@ namespace DayvpnBotWebApi.Services
             }
         }
 
-        public static void AddSubscription(long userId, string subName, SubMode subMode)
+        public static void AddSubscription(long userId, int serivceId)
         {
             var user = new UserClass
             {
                 State = UserState.Buy_Subscription,
                 Subscription = new SubscriptionClass()
                 {
-                    SubMode = subMode,
-                    SubName = subName,
+                    ServiceId = serivceId
                 }
             };
 
             _users.AddOrUpdate(userId, user, (key, existing) => user);
+            RefreshCashExpireTime(userId);
 
             Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine($"📦 Subscription Added | UserId: {userId} | SubName: {subName} | Mode: {subMode}");
+            Console.WriteLine($"📦 Subscription Request Added | UserId: {userId} | ServiceId: {serivceId}");
             Console.ResetColor();
         }
 
@@ -123,7 +123,7 @@ namespace DayvpnBotWebApi.Services
         {
             if (_users.TryGetValue(userId, out var user) && user.Subscription != null)
             {
-                user.Subscription.SubName = subName;
+                user.Subscription.SubscriptionName = subName;
                 RefreshCashExpireTime(userId);
 
                 Console.ForegroundColor = ConsoleColor.Magenta;
@@ -132,7 +132,7 @@ namespace DayvpnBotWebApi.Services
             }
         }
 
-        public static string GetRequestedBalance(long userId)
+        public static string GetRequestedBalanceAmount(long userId)
         {
             if (_users.TryGetValue(userId, out var user) && user.BalanceRequest != null)
             {
@@ -220,6 +220,22 @@ namespace DayvpnBotWebApi.Services
             }
 
             Console.WriteLine($"⚠️ GetBalanceRequest | UserId: {userId} | No Balance Request Found");
+            return null;
+        }
+
+        public static SubscriptionClassDTO? GetSubscriptionRequest(long userId)
+        {
+            if (_users.TryGetValue(userId, out var user) && user.Subscription != null)
+            {
+                Console.WriteLine($"📦 GetSubscriptionRequest | UserId: {userId} | ServiceId: {user.Subscription.ServiceId} | Name: {user.Subscription.SubscriptionName}");
+                return new SubscriptionClassDTO()
+                {
+                    UserId = userId,
+                    ServiceId = user.Subscription.ServiceId,
+                    SubscriptionName = user.Subscription.SubscriptionName
+                };
+            }
+            Console.WriteLine($"⚠️ GetSubscriptionRequest | UserId: {userId} | No Subscription Request Found");
             return null;
         }
     }

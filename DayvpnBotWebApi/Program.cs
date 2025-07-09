@@ -15,6 +15,7 @@ builder.Services.AddScoped<UserService>(); // User Service
 builder.Services.AddScoped<AppLogService>();
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddScoped<SubscriptionLinksService>();
+builder.Services.AddScoped<ServicesService>();
 
 // Main DataBase
 builder.Services.AddDbContext<AppDbContext>(options =>

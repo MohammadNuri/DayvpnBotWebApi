@@ -103,13 +103,13 @@ namespace DayvpnBotWebApi.Services
             return await _db.Users.AnyAsync(c => c.TelegramId == telegramId);
         }
 
-        public async Task<ServiceResult> AddUserBalanceAsync(BalanceClassDTO balanceRequest)
+        public async Task<ServiceResult<decimal>> AddUserBalanceAsync(BalanceClassDTO balanceRequest)
         {
             var user = await _db.Users.FirstOrDefaultAsync(c => c.TelegramId == balanceRequest.UserId);
             if (user == null)
             {
                 await _appLogService.LogAddBalanceFailureAsync((int)balanceRequest.UserId, "کاربر در دیتابیس یافت نشد.");
-                return ServiceResult.Failed("❌ کاربر مورد نظر برای افزایش موجودی پیدا نشد.");
+                return ServiceResult<decimal>.Failed("❌ کاربر مورد نظر برای افزایش موجودی پیدا نشد.");
             }
 
             user.Balance += balanceRequest.Balance;
@@ -118,12 +118,13 @@ namespace DayvpnBotWebApi.Services
             {
                 await _db.SaveChangesAsync();
                 await _appLogService.LogAddBalanceSuccessAsync(user.Id, balanceRequest.Balance);
-                return ServiceResult.Success("✅ موجودی کاربر با موفقیت افزایش یافت.");
+                CustomMemoryCash.ClearCash(user.TelegramId);
+                return ServiceResult<decimal>.Success(user.Balance, "✅ موجودی کاربر با موفقیت افزایش یافت.");
             }
             catch (Exception ex)
             {
                 await _appLogService.LogAddBalanceFailureAsync(user.Id, $"خطا در ذخیره اطلاعات: {ex.Message}");
-                return ServiceResult.Failed("❌ خطا هنگام افزایش موجودی کاربر.");
+                return ServiceResult<decimal>.Failed("❌ خطا هنگام افزایش موجودی کاربر.");
             }
         }
 

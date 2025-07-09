@@ -4,6 +4,7 @@ using DayvpnBotWebApi.Core.Database;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DayvpnBotWebApi.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250709210853_update_service_subscription")]
+    partial class update_service_subscription
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -70,7 +73,7 @@ namespace DayvpnBotWebApi.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("AppLogs", (string)null);
+                    b.ToTable("AppLogs");
                 });
 
             modelBuilder.Entity("DayvpnBotWebApi.Core.Entities.Service", b =>
@@ -115,7 +118,7 @@ namespace DayvpnBotWebApi.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Services", (string)null);
+                    b.ToTable("Services");
                 });
 
             modelBuilder.Entity("DayvpnBotWebApi.Core.Entities.Subscription", b =>
@@ -187,7 +190,7 @@ namespace DayvpnBotWebApi.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Subscriptions", (string)null);
+                    b.ToTable("Subscriptions");
                 });
 
             modelBuilder.Entity("DayvpnBotWebApi.Core.Entities.SubscriptionLinks", b =>
@@ -225,7 +228,7 @@ namespace DayvpnBotWebApi.Migrations
 
                     b.HasIndex("SubscriptionId");
 
-                    b.ToTable("SubscriptionLinks", (string)null);
+                    b.ToTable("SubscriptionLinks");
                 });
 
             modelBuilder.Entity("DayvpnBotWebApi.Core.Entities.User", b =>
@@ -275,7 +278,7 @@ namespace DayvpnBotWebApi.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Users", (string)null);
+                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("DayvpnBotWebApi.Core.Entities.AppLog", b =>

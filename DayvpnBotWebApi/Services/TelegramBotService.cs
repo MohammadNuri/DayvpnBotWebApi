@@ -1,8 +1,7 @@
 ﻿using DayvpnBotWebApi.Core.Entities;
 using DayvpnBotWebApi.Shared;
-using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.Localization;
 using Microsoft.Extensions.Caching.Memory;
-using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -115,7 +114,7 @@ namespace DayvpnBotWebApi.Services
                             // اطلاعات کاربر برای ارسال به ادمین
                             string fullName = $"{message.Chat.FirstName} {message.Chat.LastName ?? ""}".Trim();
                             string userId = message.Chat.Id.ToString();
-                            string balance = CustomMemoryCash.GetRequestedBalance(message.Chat.Id); // قیمت
+                            string balance = CustomMemoryCash.GetRequestedBalanceAmount(message.Chat.Id); // قیمت
 
                             string caption = $"📥 درخواست پرداخت جدید دریافت شد.\n\n👤 نام کاربر: {fullName}\n🆔 آیدی عددی: {userId}\n💳 مبلغ: {balance}\n\n📌 لطفاً بررسی و تأیید کنید.";
 
@@ -157,14 +156,12 @@ namespace DayvpnBotWebApi.Services
                     if (!long.TryParse(update.CallbackQuery.Data.Split(':')[1], out long userId))
                     {
                         await SendTextToAdminsAsync(botClient, "در تایید پرداخت خطایی رخ داده!!!");
-                        await SendRestartMessageToUser(botClient, update.CallbackQuery);
                         return;
                     }
 
                     if (!CustomMemoryCash.HasBalanceRequest(userId))
                     {
                         await SendTextToAdminsAsync(botClient, "کاربر در کش برای تایید پرداخت وجود ندارد!!!");
-                        await SendRestartMessageToUser(botClient, update.CallbackQuery);
                         return;
                     }
 
@@ -193,12 +190,14 @@ namespace DayvpnBotWebApi.Services
                     }
                     else
                     {
+                        decimal newBalance = result.Data;
+
                         await SendTextToAdminsAsync(botClient,
-                            $"✅ افزایش موجودی با موفقیت انجام شد.\n\n👤 کاربر با آیدی عددی: `{balanceRequest.UserId}`\n💳 مبلغ افزوده شده: `{balanceRequest.Balance:N0}` تومان");
+                            $"✅ افزایش موجودی با موفقیت انجام شد.\n\n👤 کاربر با آیدی عددی: `{balanceRequest.UserId}`\n💳 مبلغ افزوده شده: `{balanceRequest.Balance:N0}` تومان\n💰 موجودی جدید: `{newBalance:N0}` تومان");
 
                         await botClient.SendMessage(
                             chatId: balanceRequest.UserId,
-                            text: $"🎉 موجودی شما با موفقیت افزایش یافت!\n\n💳 مبلغ: `{balanceRequest.Balance:N0}` تومان\n\nاز خرید شما سپاسگزاریم 🙏\nاکنون می‌توانید از خدمات ما استفاده کنید.",
+                            text: $"🎉 موجودی شما با موفقیت افزایش یافت!\n\n💳 مبلغ افزوده شده: `{balanceRequest.Balance:N0}` تومان\n💰 موجودی جدید شما: `{newBalance:N0}` تومان\n\nاز خرید شما سپاسگزاریم 🙏\nاکنون می‌توانید از خدمات ما استفاده کنید.",
                             parseMode: ParseMode.Markdown
                         );
                     }
@@ -210,18 +209,10 @@ namespace DayvpnBotWebApi.Services
                     await botClient.AnswerCallbackQuery(update.CallbackQuery.Id);
 
                     if (!long.TryParse(update.CallbackQuery.Data.Split(':')[1], out long userId))
-                    {
                         await SendTextToAdminsAsync(botClient, "در تایید پرداخت خطایی رخ داده!!!");
-                        await SendRestartMessageToUser(botClient, update.CallbackQuery);
-                        return;
-                    }
 
                     if (!CustomMemoryCash.HasBalanceRequest(userId))
-                    {
                         await SendTextToAdminsAsync(botClient, "کاربر در کش برای عدم تایید پرداخت وجود ندارد!!!");
-                        await SendRestartMessageToUser(botClient, update.CallbackQuery);
-                        return;
-                    }
 
                     await botClient.SendMessage(
                         chatId: update.CallbackQuery.Message.Chat.Id, // این مقدار باید از callbackData استخراج بشه
@@ -261,117 +252,15 @@ namespace DayvpnBotWebApi.Services
                         await IncreaseBalance(botClient, update.CallbackQuery);
                         break;
 
-                    case $"sub_1":
-                        await HandleBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "1️⃣ انتخاب پلن\r\n🟢 پلن 5 گیگ\r\n\r\n⏱️ مدت اعتبار: 30 روز\r\n📥 حجم سرویس: 5 گیگابایت\r\n👤 تعداد کاربران: 1 نفر\r\n💸 قیمت نهایی: 45,000 تومان\r\n\r\n💳 برای تکمیل خرید و دریافت کانفیگ، دکمه زیر را فشار دهید:",
-                            "confirm-buy-sub-1");
+                    case string data when data.StartsWith("request_buy"):
+                        await HandleBuySubscription(botClient, update.CallbackQuery, data);
                         break;
 
-                    case "sub_2":
-                        await HandleBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "2️⃣ انتخاب پلن\r\n🔵 پلن 10 گیگ\r\n\r\n⏱️ مدت اعتبار: 30 روز\r\n📥 حجم سرویس: 10 گیگابایت\r\n👤 تعداد کاربران: 1 نفر\r\n💸 قیمت نهایی: 65,000 تومان\r\n\r\n💳 برای تکمیل خرید و دریافت کانفیگ، دکمه زیر را فشار دهید:",
-                            "confirm-buy-sub-2");
-                        break;
-
-                    case "sub_3":
-                        await HandleBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "3️⃣ انتخاب پلن\r\n🟤 پلن 20 گیگ\r\n\r\n⏱️ مدت اعتبار: 30 روز\r\n📥 حجم سرویس: 20 گیگابایت\r\n👤 تعداد کاربران: 1 نفر\r\n💸 قیمت نهایی: 80,000 تومان\r\n\r\n💳 برای تکمیل خرید و دریافت کانفیگ، دکمه زیر را فشار دهید:",
-                            "confirm-buy-sub-3");
-                        break;
-
-                    case "sub_4":
-                        await HandleBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "4️⃣ انتخاب پلن\r\n⚪ پلن 30 گیگ\r\n\r\n⏱️ مدت اعتبار: 30 روز\r\n📥 حجم سرویس: 30 گیگابایت\r\n👤 تعداد کاربران: 1 نفر\r\n💸 قیمت نهایی: 100,000 تومان\r\n\r\n💳 برای تکمیل خرید و دریافت کانفیگ، دکمه زیر را فشار دهید:",
-                            "confirm-buy-sub-4");
-                        break;
-
-                    case "sub_5":
-                        await HandleBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "5️⃣ انتخاب پلن\r\n🟡 پلن 75 گیگ - 4 کاربر\r\n\r\n⏱️ مدت اعتبار: 30 روز\r\n📥 حجم سرویس: 75 گیگابایت\r\n👥 تعداد کاربران: 4 نفر\r\n💸 قیمت نهایی: 185,000 تومان\r\n\r\n💳 برای تکمیل خرید و دریافت کانفیگ، دکمه زیر را فشار دهید:",
-                            "confirm-buy-sub-5");
-                        break;
-
-                    case "sub_6":
-                        await HandleBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "6️⃣ انتخاب پلن\r\n🔶 پلن 90 گیگ - 90 روزه\r\n\r\n⏱️ مدت اعتبار: 90 روز\r\n📥 حجم سرویس: 90 گیگابایت\r\n👤 تعداد کاربران: 1 نفر\r\n💸 قیمت نهایی: 215,000 تومان\r\n\r\n💳 برای تکمیل خرید و دریافت کانفیگ، دکمه زیر را فشار دهید:",
-                            "confirm-buy-sub-6");
-                        break;
-
-                    case "sub_7":
-                        await HandleBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "7️⃣ انتخاب پلن\r\n🔷 پلن 100 گیگ - 90 روزه\r\n\r\n⏱️ مدت اعتبار: 90 روز\r\n📥 حجم سرویس: 100 گیگابایت\r\n👥 تعداد کاربران: 2 نفر\r\n💸 قیمت نهایی: 240,000 تومان\r\n\r\n💳 برای تکمیل خرید و دریافت کانفیگ، دکمه زیر را فشار دهید:",
-                            "confirm-buy-sub-7");
-                        break;
-
-                    case "sub_8":
-                        await HandleBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "8️⃣ انتخاب پلن\r\n💎 پلن 150 گیگ - 90 روزه\r\n\r\n⏱️ مدت اعتبار: 90 روز\r\n📥 حجم سرویس: 150 گیگابایت\r\n👥 تعداد کاربران: 4 نفر\r\n💸 قیمت نهایی: 300,000 تومان\r\n\r\n💳 برای تکمیل خرید و دریافت کانفیگ، دکمه زیر را فشار دهید:",
-                            "confirm-buy-sub-8");
-                        break;
-
-                    case "confirm-buy-sub-1":
-                        await HandleConfirmBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "sub_1");
-                        break;
-                    case "confirm-buy-sub-2":
-                        await HandleConfirmBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "sub_2");
-                        break;
-                    case "confirm-buy-sub-3":
-                        await HandleConfirmBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "sub_3");
-                        break;
-                    case "confirm-buy-sub-4":
-                        await HandleConfirmBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "sub_4");
-                        break;
-                    case "confirm-buy-sub-5":
-                        await HandleConfirmBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "sub_5");
-                        break;
-                    case "confirm-buy-sub-6":
-                        await HandleConfirmBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "sub_6");
-                        break;
-                    case "confirm-buy-sub-7":
-                        await HandleConfirmBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "sub_7");
-                        break;
-                    case "confirm-buy-sub-8":
-                        await HandleConfirmBuySubscription(
-                            botClient,
-                            update.CallbackQuery,
-                            "sub_8");
+                    case string data when data.StartsWith("confirm_buy"):
+                        if (CustomMemoryCash.HasSubscription(update.CallbackQuery.Message.Chat.Id))
+                            await HandleConfirmBuySubscription(botClient, update.CallbackQuery, data);
+                        else
+                            await SendRestartMessageToUser(botClient, update.CallbackQuery);
                         break;
 
                     case string data when data.StartsWith("subscriptions_page_"):
@@ -598,26 +487,31 @@ namespace DayvpnBotWebApi.Services
                 }
             }
 
+            using var scope = _scopeFactory.CreateScope();
+            var _serviceService = scope.ServiceProvider.GetRequiredService<ServicesService>();
+            var services = await _serviceService.GetAll();
+
+            var inlineKeyboardButtons = new List<InlineKeyboardButton[]>();
+
+            foreach (var service in services)
+            {
+                string text = $"🟢 {service.DurationInDays} روزه - {service.DataQuotaGB} گیگ - {service.AllowedUsersCount} کاربر - {service.Price:N0} تومان";
+                string callbackData = $"request_buy_{service.Id}";
+
+                var button = InlineKeyboardButton.WithCallbackData(text, callbackData);
+                inlineKeyboardButtons.Add(new[] { button });
+            }
+
+            inlineKeyboardButtons.Add(new[] { InlineKeyboardButton.WithCallbackData("بازگشت به صفحه اصلی 🏠", "back-to-home") });
+
             await botClient.SendMessage(
                 chatId: message!.Chat.Id,
-                text: "🎯 خرید سرویس DayVPN\r\n\r\n\U0001f6d2 در 2 مرحله، اشتراک اختصاصی خود را دریافت کنید!\r\n💡 همه سرویس‌ها شامل تمامی سرورهای DayVPN هستند.\r\n🌍 قابلیت اتصال به هر لوکیشن، در هر زمان!\r\n\r\n🔻 یکی از پلن‌های زیر را انتخاب کنید:",
+                text: "🎯 خرید سرویس DayVPN\r\n\r\n🛒 در 2 مرحله، اشتراک اختصاصی خود را دریافت کنید!\r\n💡 همه سرویس‌ها شامل تمامی سرورهای DayVPN هستند.\r\n🌍 قابلیت اتصال به هر لوکیشن، در هر زمان!\r\n\r\n🔻 یکی از پلن‌های زیر را انتخاب کنید:",
                 parseMode: ParseMode.Markdown,
-                replyMarkup: new InlineKeyboardMarkup(new[]
-                {
-                    new[] { InlineKeyboardButton.WithCallbackData("🟢 30 روزه - 5 گیگ - 1 کاربر - 45,000 تومان", "sub_1") },
-                    new[] { InlineKeyboardButton.WithCallbackData("🔵 30 روزه - 10 گیگ - 1 کاربر - 65,000 تومان", "sub_2") },
-                    new[] { InlineKeyboardButton.WithCallbackData("🟤 30 روزه - 20 گیگ - 1 کاربر - 80,000 تومان", "sub_3") },
-                    new[] { InlineKeyboardButton.WithCallbackData("⚪ 30 روزه - 30 گیگ - 1 کاربر - 100,000 تومان", "sub_4") },
-                    new[] { InlineKeyboardButton.WithCallbackData("🟡 30 روزه - 75 گیگ - 4 کاربر - 185,000 تومان", "sub_5") },
-                    new[] { InlineKeyboardButton.WithCallbackData("🔶 90 روزه - 90 گیگ - 1 کاربر - 215,000 تومان", "sub_6") },
-                    new[] { InlineKeyboardButton.WithCallbackData("🔷 90 روزه - 100 گیگ - 2 کاربر - 240,000 تومان", "sub_7") },
-                    new[] { InlineKeyboardButton.WithCallbackData("💎 90 روزه - 150 گیگ - 4 کاربر - 300,000 تومان", "sub_8") },
-                    new[] { InlineKeyboardButton.WithCallbackData("بازگشت به صفحه اصلی 🏠", "back-to-home") }
-                }));
-
+                replyMarkup: new InlineKeyboardMarkup(inlineKeyboardButtons));
         }
 
-        private async Task HandleBuySubscription(ITelegramBotClient botClient, CallbackQuery callBackQuery, string confirmText, string subscriptionFunction)
+        private async Task HandleBuySubscription(ITelegramBotClient botClient, CallbackQuery callBackQuery, string data)
         {
             await botClient.AnswerCallbackQuery(callBackQuery.Id);
 
@@ -635,23 +529,53 @@ namespace DayvpnBotWebApi.Services
                 }
             }
 
+            if (!int.TryParse(data.Split('_')[2], out int serviceId))
+                await SendRestartMessageToUser(botClient, callBackQuery);
+
+            using var scope = _scopeFactory.CreateScope();
+            var _servicesService = scope.ServiceProvider.GetRequiredService<ServicesService>();
+            var service = await _servicesService.GetByIdAsync(serviceId);
+            if (service == null)
+            {
+                await SendRestartMessageToUser(botClient, callBackQuery);
+                return;
+            }
+
+            CustomMemoryCash.AddSubscription(message.Chat.Id, service.Id);
+
+            string confirmText = $"""
+🛒 *پیش‌نمایش خرید سرویس DayVPN*
+
+🔹 *نام پلن:* {service.Name}
+📅 *مدت زمان:* {service.DurationInDays} روز
+📦 *حجم:* {service.DataQuotaGB} گیگ
+👥 *تعداد کاربران مجاز:* {service.AllowedUsersCount} نفر
+💳 *قیمت:* {service.Price:N0} تومان
+
+آیا از انتخاب خود مطمئن هستید؟ 😊
+برای تایید، دکمه زیر را لمس کنید.
+""";
+            string callBackData = $"confirm_buy_{service.Id}";
+
             await botClient.SendMessage(
                 chatId: message!.Chat.Id,
                 text: confirmText,
                 parseMode: ParseMode.Markdown,
                 replyMarkup: new InlineKeyboardMarkup(new[]
                 {
-                    new[] { InlineKeyboardButton.WithCallbackData("تایید و خرید ✅", subscriptionFunction) },
+                    new[] { InlineKeyboardButton.WithCallbackData("تایید و خرید ✅", callBackData) },
                     new[] { InlineKeyboardButton.WithCallbackData("بازگشت 🔙", "back-to-buy-subscription") },
                     new[] { InlineKeyboardButton.WithCallbackData("بازگشت به صفحه اصلی 🏠", "back-to-home") },
                 }));
         }
 
-        private async Task HandleConfirmBuySubscription(ITelegramBotClient botClient, CallbackQuery callBackQuery, string callBackFunction)
+        private async Task HandleConfirmBuySubscription(ITelegramBotClient botClient, CallbackQuery callBackQuery, string data)
         {
             await botClient.AnswerCallbackQuery(callBackQuery.Id);
 
             var message = callBackQuery.Message;
+
+            CustomMemoryCash.RefreshCashExpireTime(message.Chat.Id);
 
             if (message != null)
             {
@@ -665,10 +589,13 @@ namespace DayvpnBotWebApi.Services
                 }
             }
 
-            if (!Enum.TryParse<SubMode>("sub_1", out SubMode subMode))
-                Console.WriteLine("Cannot Find SubMode");
+            if (!int.TryParse(data.Split('_')[2], out int serviceId))
+            {
+                await SendRestartMessageToUser(botClient, callBackQuery);
+                return;
+            }
 
-            CustomMemoryCash.AddSubscription(message.Chat.Id, "", subMode);
+            string callBackFunction = $"request_buy_{serviceId}";
 
             await botClient.SendMessage(
                 chatId: message!.Chat.Id,
@@ -689,18 +616,43 @@ namespace DayvpnBotWebApi.Services
                 const string SubNameRegex = "^(?i)[a-z0-9 ]{1,30}$";
                 if (Regex.IsMatch(message.Text, SubNameRegex))
                 {
-                    // Submit Sub Name
-                    CustomMemoryCash.SubmitSubscriptionName(message.Chat.Id, message.Text.Trim());
+                    CustomMemoryCash.SubmitSubscriptionName(message.Chat.Id, message.Text.Trim('_'));
 
-                    string subCost = CustomMemoryCash.GetRequestedBalance(message.Chat.Id);
+                    // Validate Balance and Insert Subscription into Database
+                    using var scope = _scopeFactory.CreateScope();
+                    var _subscriptionService = scope.ServiceProvider.GetRequiredService<SubscriptionService>();
 
-                    string paymentText = $"2️⃣ پرداخت و تأیید نهایی\r\n\r\n📛 نام کانفیگ شما با موفقیت ثبت شد.\r\n📦 حالا نوبت پرداخت مبلغ سرویس شماست.\r\n\r\n💳 لطفاً مبلغ {subCost} تومان را به کارت زیر واریز فرمایید:\r\n\r\n🏦 بانک: بلو (BluBank)\r\n👤 نام صاحب حساب: محمد نوری\r\n💳 شماره کارت: 6219 8619 6361 0935\r\n\r\n\U0001f9fe پس از واریز، تصویر فیش پرداختی را برای ما ارسال کنید تا کانفیگ شما فعال شود.\r\n\r\n⚠️ لطفاً فیش واریزی را ارسال فرمایید.";
+                    var result = await _subscriptionService.InsertSubscription(message.Chat.Id);
 
                     await botClient.SendMessage(
                         chatId: message.Chat.Id,
-                        text: paymentText,
+                        text: result.Message,
                         parseMode: ParseMode.Markdown
                         );
+
+                    if (result.IsSuccess && result is ServiceResult<SubscriptionResultDto> successResult)
+                    {
+                        var data = successResult.Data!;
+
+                        string adminMessage = $"""
+                        ✅ *خرید سرویس جدید با موفقیت ثبت شد!*
+                        
+                        👤 کاربر: *{data.UserFullName}*  
+                        🆔 شناسه عددی: `{data.TelegramId}`  
+                        💰 موجودی جدید: `{data.NewBalance:N0}` تومان  
+                        📅 زمان خرید: {PersianHelper.GetPersianCalendar(data.PurchasedAt)}
+                        
+                        🔹 سرویس: {data.ServiceName}  
+                        📦 حجم: {data.VolumeGb} گیگ  
+                        👥 کاربران مجاز: {data.UserCount} نفر  
+                        📆 مدت: {data.DurationDays} روز  
+                        💳 قیمت: `{data.Price:N0}` تومان
+                        
+                        📌 لطفاً کانفیگ سرویس را برای کاربر ارسال کنید.
+                        """;
+
+                        await SendTextToAdminsAsync(botClient, adminMessage);
+                    }
                 }
                 else
                 {
@@ -712,23 +664,7 @@ namespace DayvpnBotWebApi.Services
             }
             else
             {
-                Console.OutputEncoding = System.Text.Encoding.UTF8; // فعال کردن UTF-8
-
-                var originalColor = Console.ForegroundColor;
-
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.Write("📩 Trash Message Received From: ");
-
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"{message.From.FirstName} {message.From.LastName}");
-
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.Write("📝 Text: ");
-
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine(message.Text);
-
-                Console.ForegroundColor = originalColor;
+                await SendRestartMessageToUser(botClient, message);
             }
         }
 
@@ -954,23 +890,26 @@ namespace DayvpnBotWebApi.Services
                 return;
             }
 
-            string message = $"""
-👤 *پروفایل شما*
+            string message =
+                "👤 *نام کاربری*: *" + user.FullName + "*\n" +
+                "\u200F🆔 *شناسه کاربری*: `" + user.TelegramId + "`\n" +
+                "📦 *کل سرویس‌ها*: " + user.SubscriptionCount + " عدد\n\n" +
+                "🕒 *تاریخ عضویت*: " + PersianHelper.GetPersianCalendar(user.RegisterDate) + "\n" +
+                "💳 *موجودی*: `" + user.Balance.ToString("N0") + "` تومان";
 
-🧑‍💼 نام: *{user.FullName}*
-🆔 آیدی تلگرام: `{user.TelegramId}`
-
-🗓 تاریخ ثبت‌نام: {user.RegisterDate:yyyy/MM/dd}
-💳 موجودی: `{user.Balance:N0}` تومان
-📦 تعداد اشتراک‌ها: {user.SubscriptionCount}
-
-برای بروزرسانی اطلاعات یا دریافت پشتیبانی با ما در ارتباط باشید.
-""";
+            var keyboard = new InlineKeyboardMarkup(new[]
+                                {
+                                     new[]
+                                     {
+                                         InlineKeyboardButton.WithCallbackData("➕ افزایش موجودی", "increase_balance")
+                                     }
+                                 });
 
             await botClient.SendMessage(
                 chatId: chatId,
                 text: message,
-                parseMode: ParseMode.Markdown
+                parseMode: ParseMode.Markdown,
+                replyMarkup: keyboard
             );
         }
 

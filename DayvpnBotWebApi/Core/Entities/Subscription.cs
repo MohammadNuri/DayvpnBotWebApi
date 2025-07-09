@@ -4,7 +4,7 @@
     {
         public string SubscriptionCode { get; set; } = string.Empty;
         public string SubscriptionName { get; set; } = string.Empty;
-        public int SubscriptionVolumeMb { get; set; } = 0;
+        public int SubscriptionVolumeGb { get; set; } = 0;
         public int UsedVolumeMb { get; set; } = 0;
         public DateTime? ActivationDate { get; set; }
         public DateTime ExpirationDate { get; set; }
@@ -15,7 +15,10 @@
         public string SubscriptionStatus { get; set; } = string.Empty;
 
         public int UserId { get; set; }
-        public User User { get; set; } = new User();
+        public User User { get; set; } = null!;
+
+        public int ServiceId { get; set; }
+        public Service Service { get; set; } = null!;
 
         public List<SubscriptionLinks> SubscriptionLinks { get; set; } = new List<SubscriptionLinks>(); 
     }
