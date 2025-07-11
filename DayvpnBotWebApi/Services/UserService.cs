@@ -119,7 +119,6 @@ namespace DayvpnBotWebApi.Services
             {
                 await _db.SaveChangesAsync();
                 await _appLogService.LogAddBalanceSuccessAsync(user, oldBalance, balanceRequest.Balance, user.Balance);
-                CustomMemoryCash.ClearCash(user.TelegramId);
                 return ServiceResult<decimal>.Success(user.Balance, "✅ موجودی کاربر با موفقیت افزایش یافت.");
             }
             catch (Exception ex)

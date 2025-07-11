@@ -10,6 +10,7 @@ namespace DayvpnBotWebApi.Services
         private class UserClass
         {
             public UserState State { get; set; } = UserState.None;
+            public PaymentMethod? PaymentMethod { get; set; }
             public BalanceClass? BalanceRequest { get; set; } = null;
             public SubscriptionClass? Subscription { get; set; } = null;
             public long? TelegramId { get; set; } = null;
@@ -26,6 +27,23 @@ namespace DayvpnBotWebApi.Services
         {
             public decimal Balance { get; set; } = 0;
             public byte[]? PaymentImage { get; set; }
+        }
+
+        public static void SetPaymentMethod(long userId, PaymentMethod method)
+        {
+            if(_users.TryGetValue(userId,out var user))
+            {
+                user.PaymentMethod = method;
+            }
+        }
+
+        public static PaymentMethod? GetPaymentMethod(long userId)
+        {
+            if (_users.TryGetValue(userId, out var user))
+            {
+                return user.PaymentMethod;
+            }
+            return null;
         }
 
         public static long? GetAssignedTelegramIdForSendConfig(long userId)
@@ -76,6 +94,24 @@ namespace DayvpnBotWebApi.Services
             }
         }
 
+        public static void ClearCash(long userId, UserState state)
+        {
+            if (_users.TryGetValue(userId, out var user))
+            {
+                if (user.State == state)
+                {
+                    if (_users.TryRemove(userId, out _))
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.Write("🧹 User Cash Removed: ");
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine($"UserId = {userId}");
+                        Console.ResetColor();
+                    }
+                }
+            }
+        }
+
         public static void RefreshCashExpireTime(long userId)
         {
             if (_users.TryGetValue(userId, out var user))
@@ -109,10 +145,17 @@ namespace DayvpnBotWebApi.Services
 
         public static void AddBalance(long userId)
         {
-            var user = new UserClass
+            if (_users.TryGetValue(userId, out var user))
             {
-                State = UserState.Increase_Balance,
-            };
+                user.State = UserState.Increase_Balance;
+            }
+            else
+            {
+                user = new UserClass
+                {
+                    State = UserState.Increase_Balance,
+                };
+            }
 
             _users.AddOrUpdate(userId, user, (key, existing) => user);
             RefreshCashExpireTime(userId);
