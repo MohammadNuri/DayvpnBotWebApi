@@ -363,3 +363,4 @@ MigrationBackup/
 FodyWeavers.xsd
 /Developer_Bot.txt
 /GitPull.txt
+/DayvpnBotWebApi/Program.cs
