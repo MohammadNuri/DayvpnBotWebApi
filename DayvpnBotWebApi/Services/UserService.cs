@@ -153,8 +153,8 @@ namespace DayvpnBotWebApi.Services
             {
                 await _db.SaveChangesAsync();
                 await _appLogService.LogAddBalanceSuccessAsync(user, oldBalance, requestBalance, user.Balance);
-                await _transactionRequestService.UpdateStatusAsync(transactionRequestId,TransactionRequestStatus.Approved);
-                await _transactionService.CreateAsync(new Transaction
+                var transactionRequestReult = await _transactionRequestService.UpdateStatusAsync(transactionRequestId,TransactionRequestStatus.Approved);
+                var transactionResult = await _transactionService.CreateAsync(new Transaction
                 {
                     UserId = user.Id,
                     Type = TransactionType.Deposit,
@@ -165,6 +165,23 @@ namespace DayvpnBotWebApi.Services
                     PaymentImage = walletCache.PaymentImage,
                     Status = TransactionStatus.Approved
                 });
+
+                Console.WriteLine("=== Balance Top-Up Operation Results ===");
+
+                Console.WriteLine("1. Transaction Request Status Update:");
+                Console.WriteLine(transactionRequestReult.IsSuccess
+                    ? $"✅ Success: {transactionRequestReult.Message}"
+                    : $"❌ Failed: {transactionRequestReult.Message}");
+
+                Console.WriteLine();
+
+                Console.WriteLine("2. New Transaction Record Creation:");
+                Console.WriteLine(transactionResult.IsSuccess
+                    ? $"✅ Success: {transactionResult.Message}"
+                    : $"❌ Failed: {transactionResult.Message}");
+
+                Console.WriteLine("========================================");
+
 
                 await _redisCache.InvalidateAsync(RedisKeys.Wallet(userId));
 
