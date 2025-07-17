@@ -42,7 +42,7 @@ services:
     container_name: dayvpn-bot
     environment:
       - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=DayvpnDb;User Id=sa;Password=${SQL_PASSWORD};MultipleActiveResultSets=true;encrypt=true;trustServerCertificate=true;
-      - ConnectionStrings__Redis=redis:6379
+      - Redis__Host=redis:6379,password=${REDIS_PASSWORD},connectTimeout=10000,connectRetry=5,abortConnect=false
     depends_on:
       sqlserver:
         condition: service_healthy
