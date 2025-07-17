@@ -194,35 +194,15 @@ namespace DayvpnBotWebApi.Services
                     var trackingCode = update.CallbackQuery.Data.Split(':')[1];
                     var userId = long.Parse(trackingCode.Substring(4));
 
-                    var walletCache = new WalletCacheClass();
-
-                    if (await _redisCache.ExistsAsync(RedisKeys.Wallet(userId)))
+                    var walletCacheResult = await GetTransactionRequestAsync(update);
+                    if (!walletCacheResult.IsSuccess)
                     {
-                        walletCache = await _redisCache.GetAsync<WalletCacheClass>(RedisKeys.Wallet(userId));
-                    }
-                    else
-                    {
-                        var transanctionRequest = await _transactionRequestService.GetByTrackingCodeAsync(trackingCode);
-                        if (transanctionRequest == null)
-                        {
-                            await SendTextToAdminsAsync(botClient, "درخواست افزایش پیدا نشد.");
-                            return;
-                        }
-
-                        walletCache = new WalletCacheClass()
-                        {
-                            PaymentImage = transanctionRequest.PaymentImage,
-                            PaymentMethod = transanctionRequest.PaymentMethod,
-                            RequestBalance = transanctionRequest.Amount,
-                            TransactionRequestId = transanctionRequest.Id,
-                        };
-                    }
-
-                    if (walletCache == null)
-                    {
-                        await SendTextToAdminsAsync(botClient, "درخواست افزایش پیدا نشد.");
+                        await SendTextToAdminsAsync(botClient, walletCacheResult.Message);
+                        await botClient.AnswerCallbackQuery(update.CallbackQuery.Id);
                         return;
                     }
+
+                    var walletCache = walletCacheResult.Data;
 
                     var _userService = scope.ServiceProvider.GetRequiredService<UserService>();
 
@@ -278,16 +258,21 @@ namespace DayvpnBotWebApi.Services
                 // عدم تایید پرداخت
                 if (update.CallbackQuery.Data.StartsWith("reject_payment"))
                 {
-                    await botClient.AnswerCallbackQuery(update.CallbackQuery.Id);
+                    var trackingCode = update.CallbackQuery.Data.Split(':')[1];
+                    var userId = long.Parse(trackingCode.Substring(4));
 
-                    if (!long.TryParse(update.CallbackQuery.Data.Split(':')[1], out long userId))
-                        await SendTextToAdminsAsync(botClient, "در رد پرداخت خطایی رخ داده!!!");
+                    var walletCacheResult = await GetTransactionRequestAsync(update);
+                    if (!walletCacheResult.IsSuccess)
+                    {
+                        await SendTextToAdminsAsync(botClient, walletCacheResult.Message);
+                        await botClient.AnswerCallbackQuery(update.CallbackQuery.Id);
+                        return;
+                    }
 
-                    if (!await _redisCache.ExistsAsync(RedisKeys.Wallet(userId)))
-                        await SendTextToAdminsAsync(botClient, "کاربر در کش برای عدم تایید پرداخت وجود ندارد!!!");
+                    var walletCache = walletCacheResult.Data;
 
-                    var walletCache = await _redisCache.GetAsync<WalletCacheClass>(RedisKeys.Wallet(userId));
                     await _transactionRequestService.UpdateStatusAsync(walletCache.TransactionRequestId.Value, TransactionRequestStatus.Rejected);
+                    await _redisCache.InvalidateAsync(RedisKeys.Wallet(userId));
 
                     await botClient.SendMessage(
                         chatId: userId,
@@ -302,6 +287,13 @@ namespace DayvpnBotWebApi.Services
 """,
                         parseMode: ParseMode.Markdown
                     );
+
+                    // 🔔 پیام اطلاع‌رسانی به ادمین
+                    await SendTextToAdminsAsync(botClient, $"""
+🚫 درخواست افزایش موجودی با کد پیگیری `{trackingCode}` رد شد و پیام مربوطه برای کاربر ارسال گردید.
+""");
+
+                    await botClient.AnswerCallbackQuery(update.CallbackQuery.Id);
                 }
 
                 switch (update.CallbackQuery.Data)
@@ -397,6 +389,72 @@ namespace DayvpnBotWebApi.Services
             }
         }
 
+
+        private async Task<ServiceResult<WalletCacheClass>> GetTransactionRequestAsync(Update update)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
+            var _transactionRequestService = scope.ServiceProvider.GetRequiredService<TransactionRequestService>();
+
+            var trackingCode = update.CallbackQuery.Data.Split(':')[1];
+            var userId = long.Parse(trackingCode.Substring(4));
+
+            var walletCache = new WalletCacheClass();
+
+            if (await _redisCache.ExistsAsync(RedisKeys.Wallet(userId)))
+            {
+                walletCache = await _redisCache.GetAsync<WalletCacheClass>(RedisKeys.Wallet(userId));
+            }
+            else
+            {
+                var transanctionRequest = await _transactionRequestService.GetByTrackingCodeAsync(trackingCode);
+                if (transanctionRequest == null)
+                {
+                    return ServiceResult<WalletCacheClass>.Failed($"""
+                            ❗️درخواست افزایش موجودی یافت نشد.
+
+                            🔎 کد پیگیری: `{trackingCode}`
+
+                            لطفاً از صحت کد وارد شده اطمینان حاصل فرمایید.
+                            """);
+                }
+
+
+                if (transanctionRequest.Status == TransactionRequestStatus.Approved ||
+                    transanctionRequest.Status == TransactionRequestStatus.Rejected)
+                {
+                    string statusMessage = transanctionRequest.Status switch
+                    {
+                        TransactionRequestStatus.Approved => "⚠️ این درخواست افزایش موجودی قبلاً *تأیید* شده است و نیاز به اقدام مجدد ندارد.",
+                        TransactionRequestStatus.Rejected => "❌ این درخواست افزایش موجودی قبلاً *رد* شده است و امکان تأیید مجدد آن وجود ندارد.",
+                        _ => "درخواست افزایش موجودی معتبر نیست."
+                    };
+
+                    return ServiceResult<WalletCacheClass>.Failed(statusMessage);
+                }
+
+                walletCache = new WalletCacheClass()
+                {
+                    PaymentImage = transanctionRequest.PaymentImage,
+                    PaymentMethod = transanctionRequest.PaymentMethod,
+                    RequestBalance = transanctionRequest.Amount,
+                    TransactionRequestId = transanctionRequest.Id,
+                };
+            }
+
+            if (walletCache == null)
+            {
+                return ServiceResult<WalletCacheClass>.Failed($"""
+                            ❗️درخواست افزایش موجودی یافت نشد.
+
+                            🔎 کد پیگیری: `{trackingCode}`
+
+                            لطفاً از صحت کد وارد شده اطمینان حاصل فرمایید.
+                            """);
+            }
+
+            return ServiceResult<WalletCacheClass>.Success(walletCache, "");
+        }
         private async Task InitiateConfigSendToUserAsync(ITelegramBotClient botClient, CallbackQuery callbackQuery, string data)
         {
             await botClient.AnswerCallbackQuery(callbackQuery.Id);
