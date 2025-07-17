@@ -15,10 +15,27 @@ namespace DayvpnBotWebApi.Core.Database
         public DbSet<SubscriptionLinks> SubscriptionLinks { get; set; }
         public DbSet<AppLog> AppLogs { get; set; }
         public DbSet<Service> Services { get; set; }
+        public DbSet<TransactionRequest> TransactionRequests { get; set; }
+        public DbSet<Transaction> Transactions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<Transaction>()
+                .HasOne(s => s.User)
+                .WithMany(u => u.Transactions)
+                .HasForeignKey(s => s.UserId)
+                .HasPrincipalKey(u => u.Id)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<TransactionRequest>()
+                .HasOne(s => s.User)
+                .WithMany(u => u.TransactionRequests)
+                .HasForeignKey(s => s.UserId)
+                .HasPrincipalKey(u => u.Id)
+                .OnDelete(DeleteBehavior.Restrict);
+
 
             // Subscription
             modelBuilder.Entity<Subscription>()
@@ -75,6 +92,14 @@ namespace DayvpnBotWebApi.Core.Database
 
             modelBuilder.Entity<Service>()
                 .Property(u => u.Price)
+                .HasPrecision(18, 0);
+
+            modelBuilder.Entity<Transaction>()
+                .Property(u => u.Amount)
+                .HasPrecision(18, 0);
+
+            modelBuilder.Entity<TransactionRequest>()
+                .Property(u => u.Amount)
                 .HasPrecision(18, 0);
         }
     }

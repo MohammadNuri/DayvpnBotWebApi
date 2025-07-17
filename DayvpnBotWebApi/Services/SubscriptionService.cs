@@ -2,6 +2,8 @@
 using DayvpnBotWebApi.Core.Entities;
 using DayvpnBotWebApi.Shared;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
+using System.Runtime.InteropServices;
 
 namespace DayvpnBotWebApi.Services
 {
@@ -10,11 +12,24 @@ namespace DayvpnBotWebApi.Services
         private readonly AppDbContext _db;
         private readonly AppLogService _appLogService;
         private readonly ServicesService _servicesService;
-        public SubscriptionService(AppDbContext db, AppLogService appLogService, ServicesService servicesService)
+        private readonly RedisCacheManager _redisCache;
+        private readonly TransactionRequestService _transactionRequestService;
+        private readonly TransactionService _transactionService;
+
+        public SubscriptionService(AppDbContext db,
+            AppLogService appLogService,
+            ServicesService servicesService,
+            RedisCacheManager redisCache,
+            TransactionService transactionService,
+            TransactionRequestService transactionRequestService)
         {
             _db = db;
             _appLogService = appLogService;
             _servicesService = servicesService;
+            _redisCache = redisCache;
+            _transactionRequestService = transactionRequestService;
+            _transactionService = transactionService;
+
         }
 
         public async Task<List<Subscription>> GetAllAsync()
@@ -94,7 +109,7 @@ namespace DayvpnBotWebApi.Services
 
         public async Task<ServiceResult<SubscriptionResultDto>> InsertSubscription(long telegramId)
         {
-            var subscriptionRequest = CustomMemoryCash.GetSubscriptionRequest(telegramId);
+            var subscriptionRequest = await _redisCache.GetAsync<SubscriptionCacheClass>(RedisKeys.Subscription(telegramId));
             if (subscriptionRequest == null)
                 return ServiceResult<SubscriptionResultDto>.Failed("""
                 ❌ *خطا در پردازش درخواست شما!*
@@ -139,7 +154,7 @@ namespace DayvpnBotWebApi.Services
                 var subscription = new Subscription
                 {
                     SubscriptionCode = Guid.NewGuid().ToString(),
-                    SubscriptionName = subscriptionRequest.SubscriptionName,
+                    SubscriptionName = subscriptionRequest.RequestedSubscriptioName,
                     SubscriptionVolumeGb = service.DataQuotaGB,
                     UserId = user.Id,
                     ServiceId = subscriptionRequest.ServiceId,
@@ -154,13 +169,36 @@ namespace DayvpnBotWebApi.Services
 
                 await _db.SaveChangesAsync();
 
+                string reason = $"✅ Subscription خریداری شد: UserId={user.Id}, ServiceId={service.Id}, Volume={service.DataQuotaGB}GB";
+
                 Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"✅ Subscription خریداری شد: UserId={user.Id}, ServiceId={service.Id}, Volume={service.DataQuotaGB}GB");
+                Console.WriteLine(reason);
                 Console.ResetColor();
 
                 await _appLogService.LogAddSubscriptionSuccessAsync(user, subscription, oldBalance, service.Price, user.Balance);
+                await _appLogService.LogDeductBalanceSuccessAsync(user, oldBalance, service.Price, user.Balance, reason);
 
-                CustomMemoryCash.ClearCash(telegramId);
+                await _transactionRequestService.CreateAsync(new TransactionRequest
+                {
+                    Amount = service.Price,
+                    PaymentMethod = PaymentMethod.DirectPay,
+                    UserId = user.Id,
+                    TrackingCode = $"S-{DateTime.UtcNow:yyyyMMddHHmmss}-{user.Id}"
+                });
+
+                await _transactionService.CreateAsync(new Transaction
+                {
+                    UserId = user.Id,
+                    Type = TransactionType.Withdrawal,
+                    Amount = service.Price,
+                    Description = $"خرید اشتراک '{service.Name}' توسط کاربر با شناسه {user.TelegramId} (UserId: {user.Id})، حجم {service.DataQuotaGB} گیگ، قیمت {service.Price:N0} تومان",
+                    PaymentMethod = PaymentMethod.DirectPay,
+                    Status = TransactionStatus.Approved
+                });
+
+                await _redisCache.InvalidateAsync(RedisKeys.Subscription(telegramId));
+                await _redisCache.InvalidateAsync(RedisKeys.Wallet(telegramId));
+
                 return ServiceResult<SubscriptionResultDto>.Success(new SubscriptionResultDto()
                 {
                     UserFullName = user.FirstName + " " + user.LastName,
@@ -188,7 +226,9 @@ namespace DayvpnBotWebApi.Services
                 Console.ResetColor();
 
                 await _appLogService.LogAddSubscriptionFailureAsync(user, ex.Message);
-                CustomMemoryCash.ClearCash(telegramId);
+
+                await _redisCache.InvalidateAsync(RedisKeys.User(telegramId));
+                await _redisCache.InvalidateAsync(RedisKeys.Subscription(telegramId));
 
                 return ServiceResult<SubscriptionResultDto>.Failed("""
                 ❌ *خطایی هنگام ثبت خرید شما رخ داد!*

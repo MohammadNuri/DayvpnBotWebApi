@@ -2,9 +2,9 @@
 {
     public enum UserState
     {
-        None,
-        Buy_Subscription,
-        Increase_Balance,
-        Send_User_Config,
+        None = 0,
+        Buy_Subscription = 1,
+        Increase_Balance = 2,
+        Send_User_Config = 3,
     }
 }

@@ -2,6 +2,9 @@
 using DayvpnBotWebApi.Services;
 using Microsoft.EntityFrameworkCore;
 using Telegram.Bot;
+using DotNetEnv;
+
+Env.Load();
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,6 +19,20 @@ builder.Services.AddScoped<AppLogService>();
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddScoped<SubscriptionLinksService>();
 builder.Services.AddScoped<ServicesService>();
+builder.Services.AddScoped<RedisCacheManager>();
+builder.Services.AddScoped<TransactionService>();
+builder.Services.AddScoped<TransactionRequestService>();
+
+
+// Redis Cache
+var redisHost = Environment.GetEnvironmentVariable("Redis__Host") ?? "redis:6379";
+var redisPassword = Environment.GetEnvironmentVariable("REDIS_PASSWORD");
+
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = redisHost;
+    options.InstanceName = "DayVPN_";
+});
 
 // Main DataBase
 builder.Services.AddDbContext<AppDbContext>(options =>

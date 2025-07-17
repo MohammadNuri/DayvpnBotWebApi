@@ -93,12 +93,15 @@ namespace DayvpnBotWebApi.Services
         }
 
 
-        public async Task<ServiceResult> LogUserRegisteredAsync(string firstName, string lastName, int userId, string? metadata = null)
+        public async Task<ServiceResult> LogUserRegisteredAsync(string firstName, string lastName, int userId, long telegramId, string? metadata = null)
         {
             try
             {
                 string fullName = $"{firstName} {lastName}".Trim();
-                string message = $"کاربر جدید با نام {fullName} و شناسه {userId} با موفقیت ثبت‌نام کرد.";
+                string message = $"✅ کاربر جدید با موفقیت ثبت‌نام شد!\n\n" +
+                                 $"👤 نام: {fullName}\n" +
+                                 $"🆔 شناسه داخلی: {userId}\n" +
+                                 $"📱 شناسه تلگرام: {telegramId}\n\n";
 
                 var log = new AppLog
                 {
@@ -129,19 +132,46 @@ namespace DayvpnBotWebApi.Services
                 UserId = user.Id,
                 EventType = LogEventType.BalanceIncreased,
                 Message = $"""
-                ✅ افزایش موجودی با موفقیت انجام شد.
+                    ✅ افزایش موجودی با موفقیت انجام شد.
 
-                👤 کاربر: {user.FirstName} {user.LastName}
-                🆔 Telegram ID: {user.TelegramId}
-                📱 شماره موبایل: {user.MobileNumber}
+                    👤 کاربر: {user.FirstName} {user.LastName}
+                    🆔 Telegram ID: {user.TelegramId}
+                    📱 شماره موبایل: {user.MobileNumber}
 
-                🔢 مبلغ درخواستی: {requestedBalance:N0} تومان
-                💰 موجودی قبلی: {oldBalance:N0} تومان
-                ➕ افزایش داده شده: {requestedBalance:N0} تومان
-                💳 موجودی جدید: {newBalance:N0} تومان
+                    🔢 مبلغ درخواستی: {requestedBalance:N0} تومان
+                    💰 موجودی قبلی: {oldBalance:N0} تومان
+                    ➕ افزایش داده شده: {requestedBalance:N0} تومان
+                    💳 موجودی جدید: {newBalance:N0} تومان
 
-                📅 زمان ثبت: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
-                """,
+                    📅 زمان ثبت: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+                    """,
+                CreatedAt = DateTime.Now
+            };
+
+            await CreateLogAsync(log);
+        }
+
+        public async Task LogDeductBalanceSuccessAsync(User user, decimal oldBalance, decimal deductedAmount, decimal newBalance, string reason)
+        {
+            var log = new AppLog
+            {
+                UserId = user.Id,
+                EventType = LogEventType.BalanceDecreased,
+                Message = $"""
+                    ⚠️ کاهش موجودی با موفقیت انجام شد.
+
+                    👤 کاربر: {user.FirstName} {user.LastName}
+                    🆔 Telegram ID: {user.TelegramId}
+                    📱 شماره موبایل: {user.MobileNumber}
+
+                    💳 موجودی قبلی: {oldBalance:N0} تومان
+                    ➖ مبلغ کسر شده: {deductedAmount:N0} تومان
+                    💰 موجودی جدید: {newBalance:N0} تومان
+
+                    📘 دلیل: {reason}
+
+                    📅 زمان ثبت: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+                    """,
                 CreatedAt = DateTime.Now
             };
 

@@ -1,16 +1,12 @@
 ﻿using DayvpnBotWebApi.Core.Entities;
 using DayvpnBotWebApi.Shared;
-using Microsoft.AspNetCore.Localization;
-using Microsoft.AspNetCore.Server.Kestrel.Core.Features;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.OpenApi.Services;
 using System.Text.RegularExpressions;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
-using static System.Net.Mime.MediaTypeNames;
 
 namespace DayvpnBotWebApi.Services
 {
@@ -53,46 +49,47 @@ namespace DayvpnBotWebApi.Services
 
         private async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
         {
-            CustomMemoryCash.ClearExpiredCash();
+            using var scope = _scopeFactory.CreateScope();
+            var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
+            var _transactionRequestService = scope.ServiceProvider.GetRequiredService<TransactionRequestService>();
 
             if (update?.Message?.Text != null)
             {
                 var message = update.Message;
 
+                // ثبت نام کاربر در صورت وجود
                 await SignupUserAsync(botClient, message);
 
-                Console.OutputEncoding = System.Text.Encoding.UTF8; // فعال کردن UTF-8
-
-                var originalColor = Console.ForegroundColor;
-
-                Console.ForegroundColor = ConsoleColor.Cyan;
-                Console.Write("📩 Message Received From: ");
-
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"{message.From.FirstName} {message.From.LastName}");
-
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.Write("📝 Text: ");
-
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine(message.Text);
-
-                Console.ForegroundColor = originalColor;
+                // لاگ کنسول برای دریافت هر نوع مسیج از بات
+                await ConsoleLogActions.ConsoleLogReceivedMessageAsync(message);
 
                 switch (message.Text.ToLower())
                 {
                     case "/start":
-                        await Start(botClient, update);
+                        await StartAsync(botClient, update);
                         break;
 
                     default:
-                        var state = CustomMemoryCash.GetUserState(message.Chat.Id);
+                        var state = await _redisCache.GetUserStateAsync(message.Chat.Id);
                         if (state != null && state == UserState.Buy_Subscription)
-                            await SetSubName(botClient, update);
+                            await SetSubNameAsync(botClient, update);
                         else if (state != null && state == UserState.Increase_Balance)
-                            await SetBalance(botClient, update);
-                        else if (state != null && message.Chat.Id == (long)Admins.Nouri && state == UserState.Send_User_Config)
-                            await DeliverConfigToUserAsync(botClient, update);
+                            await SetBalanceAsync(botClient, update);
+
+                        if (message.ReplyToMessage != null && message.Chat.Id == (long)Admins.Nouri)
+                        {
+                            var text = message.ReplyToMessage.Text;
+                            var match = Regex.Match(text, @"شناسه عددی:\s*(\d+)");
+                            if (match.Success && long.TryParse(match.Groups[1].Value, out long userId))
+                            {
+                                await botClient.SendMessage(
+                                        chatId: userId,
+                                        text: message.Text,
+                                        parseMode: ParseMode.Markdown
+                                    );
+                            }
+                        }
+
                         break;
                 }
             }
@@ -100,10 +97,11 @@ namespace DayvpnBotWebApi.Services
             {
                 //Take Pictures
                 var message = update.Message;
-                if (CustomMemoryCash.GetUserState(message.Chat.Id) == UserState.Increase_Balance)
+                var userId = message.Chat.Id;
+                if (await _redisCache.GetUserStateAsync(userId) == UserState.Increase_Balance)
                 {
                     // بررسی اینکه کاربر اشتراک فعال داره
-                    if (CustomMemoryCash.HasBalanceRequest(message.Chat.Id))
+                    if (await _redisCache.ExistsAsync(RedisKeys.Wallet(userId)))
                     {
                         var largestPhoto = message.Photo.Last();
                         var file = await botClient.GetFile(largestPhoto.FileId);
@@ -114,33 +112,72 @@ namespace DayvpnBotWebApi.Services
                             await botClient.DownloadFile(file.FilePath, stream);
 
                             // ذخیره عکس در حافظه برای این کاربر
-                            CustomMemoryCash.SubmitPaymentPicture(message.From.Id, stream.ToArray());
+                            await _redisCache.UpdateCacheAsync<WalletCacheClass>(RedisKeys.Wallet(message.Chat.Id), async c =>
+                            {
+                                c.PaymentImage = stream.ToArray();
+                                await Task.CompletedTask;
+                            });
 
                             // اطلاعات کاربر برای ارسال به ادمین
                             string fullName = $"{message.Chat.FirstName} {message.Chat.LastName ?? ""}".Trim();
-                            string userId = message.Chat.Id.ToString();
-                            string balance = CustomMemoryCash.GetRequestedBalanceAmount(message.Chat.Id); // قیمت
-
-                            string caption = $"📥 درخواست پرداخت جدید دریافت شد.\n\n👤 نام کاربر: {fullName}\n🆔 آیدی عددی: {userId}\n💳 مبلغ: {balance}\n\n📌 لطفاً بررسی و تأیید کنید.";
+                            string userIdStr = message.Chat.Id.ToString();
+                            var walletCache = await _redisCache.GetAsync<WalletCacheClass>(RedisKeys.Wallet(message.Chat.Id));
+                            if (walletCache == null)
+                            {
+                                await SendRestartMessageToUser(botClient, message);
+                                return;
+                            }
+                            string balance = walletCache.RequestBalance.ToString(); // قیمت
+                            string caption = $"📥 درخواست پرداخت جدید دریافت شد.\n\n👤 نام کاربر: {fullName}\n🆔 آیدی عددی: {userIdStr}\n💳 مبلغ: {balance}\n\n📌 لطفاً بررسی و تأیید کنید.";
 
                             // ارسال عکس به ادمین همراه با کپشن
                             using var adminStream = new MemoryStream(stream.ToArray()); // برای اطمینان دوباره بخونیم
 
-                            await SendConfirmPhotoToAdminsAsync(botClient, adminStream, caption, message.Chat.Id);
+                            var user = await _redisCache.GetAsync<UserCacheClass>(RedisKeys.User(userId));
+
+                            Random rnd = new Random();
+
+                            // دخیره درخواست پرداخت در دیتابیس
+                            var transactionRequestResult = await _transactionRequestService.CreateAsync(new TransactionRequest()
+                            {
+                                Amount = walletCache.RequestBalance,
+                                PaymentImage = adminStream.ToArray(),
+                                PaymentMethod = walletCache.PaymentMethod.Value,
+                                UserId = user.RealUserId,
+                                TrackingCode = $"{rnd.Next(1000, 9999)}{userId}",
+                            });
+
+                            await _redisCache.UpdateCacheAsync<WalletCacheClass>(RedisKeys.Wallet(userId), async c =>
+                            {
+                                c.TransactionRequestId = transactionRequestResult.Data.Id;
+                                await Task.CompletedTask;
+                            });
+
+                            await SendConfirmPhotoToAdminsAsync(botClient, adminStream, caption, message.Chat.Id, transactionRequestResult.Data.TrackingCode);
 
                             // پیام به خود کاربر
                             await botClient.SendMessage(
                                 chatId: message.Chat.Id,
-                                text: "✅ عکس پرداخت با موفقیت دریافت شد.\r\n🕓 لطفاً منتظر بمانید تا پرداخت شما توسط مدیریت بررسی و تأیید شود.\r\n📢."
+                                text: $"✅ عکس پرداخت با موفقیت دریافت شد.\n" +
+                                      $"📌 شماره پیگیری شما: *{transactionRequestResult.Data?.TrackingCode}*\n\n" +
+                                      $"🕓 لطفاً منتظر بمانید تا پرداخت شما توسط مدیریت بررسی و تأیید شود.\n" +
+                                      $"📢 پس از تأیید، موجودی شما به‌روزرسانی خواهد شد و اطلاع‌رسانی انجام می‌گردد.",
+                                parseMode: ParseMode.Markdown
                             );
                         }
-                        catch (Exception)
+                        catch (Exception ex)
                         {
+                            Console.WriteLine($"message:{ex.Message} | innermessage:{ex.InnerException?.Message}" );
+
                             await botClient.SendMessage(
                                 chatId: message.Chat.Id,
                                 text: "❌ مشکلی در دریافت تصویر رخ داد. لطفاً دوباره تلاش کنید یا با پشتیبانی در تماس باشید."
                             );
                         }
+                    }
+                    else
+                    {
+                        await SendRestartMessageToUser(botClient, message);
                     }
                 }
             }
@@ -151,31 +188,49 @@ namespace DayvpnBotWebApi.Services
                 {
                     await botClient.AnswerCallbackQuery(update.CallbackQuery.Id);
 
-                    if (!long.TryParse(update.CallbackQuery.Data.Split(':')[1], out long userId))
+                    var trackingCode = update.CallbackQuery.Data.Split(':')[1];
+                    var userId = long.Parse(trackingCode.Substring(4));
+
+                    var walletCache = new WalletCacheClass();
+
+                    if (await _redisCache.ExistsAsync(RedisKeys.Wallet(userId)))
                     {
-                        await SendTextToAdminsAsync(botClient, "در تایید پرداخت خطایی رخ داده!!!");
+                        walletCache = await _redisCache.GetAsync<WalletCacheClass>(RedisKeys.Wallet(userId));
+                    }
+                    else
+                    {
+                        var transanctionRequest = await _transactionRequestService.GetByTrackingCodeAsync(trackingCode);
+                        if(transanctionRequest == null)
+                        {
+                            await SendTextToAdminsAsync(botClient, "درخواست افزایش پیدا نشد.");
+                            return;
+                        }
+
+                        walletCache = new WalletCacheClass()
+                        {
+                            PaymentImage = transanctionRequest.PaymentImage,
+                            PaymentMethod = transanctionRequest.PaymentMethod,
+                            RequestBalance = transanctionRequest.Amount,
+                            TransactionRequestId = transanctionRequest.Id,
+                        };
+                    }
+
+                    if (walletCache == null)
+                    {
+                        await SendTextToAdminsAsync(botClient, "درخواست افزایش پیدا نشد.");
                         return;
                     }
 
-                    if (!CustomMemoryCash.HasBalanceRequest(userId))
-                    {
-                        await SendTextToAdminsAsync(botClient, "کاربر در کش برای تایید پرداخت وجود ندارد!!!");
-                        return;
-                    }
-
-                    var balanceRequest = CustomMemoryCash.GetBalanceRequest(userId);
-
-                    using var scope = _scopeFactory.CreateScope();
                     var _userService = scope.ServiceProvider.GetRequiredService<UserService>();
 
-                    var result = await _userService.AddUserBalanceAsync(balanceRequest);
+                    var result = await _userService.AddUserBalanceAsync(walletCache, update.CallbackQuery.From.Id, walletCache.TransactionRequestId.Value);
                     if (!result.IsSuccess)
                     {
                         await SendTextToAdminsAsync(botClient,
-                             $"❌ افزایش موجودی *ناموفق* بود.\n\n👤 کاربر با آیدی عددی: `{balanceRequest.UserId}` در کش یافت نشد یا مشکلی رخ داده است.\n💳 مبلغ درخواستی: `{balanceRequest.Balance:N0}` تومان");
+                             $"❌ افزایش موجودی *ناموفق* بود.\n\n👤 کاربر با آیدی عددی: `{update.CallbackQuery.From.Id}` در کش یافت نشد یا مشکلی رخ داده است.\n💳 مبلغ درخواستی: `{walletCache.RequestBalance:N0}` تومان");
 
                         await botClient.SendMessage(
-                            chatId: balanceRequest.UserId,
+                            chatId: update.CallbackQuery.From.Id,
                             text: """
 ❌ متأسفانه افزایش موجودی شما با مشکل مواجه شد.
 
@@ -189,7 +244,7 @@ namespace DayvpnBotWebApi.Services
                     else
                     {
                         decimal newBalance = result.Data;
-                        var paymentMethod = CustomMemoryCash.GetPaymentMethod(userId);
+                        var paymentMethod = walletCache.PaymentMethod;
                         if (paymentMethod != null && paymentMethod.Value == PaymentMethod.DirectPay)
                         {
                             await ApplyDirectSubscription(botClient, update.CallbackQuery);
@@ -197,16 +252,15 @@ namespace DayvpnBotWebApi.Services
                         else
                         {
                             await SendTextToAdminsAsync(botClient,
-                                $"✅ افزایش موجودی با موفقیت انجام شد.\n\n👤 کاربر با آیدی عددی: `{balanceRequest.UserId}`\n💳 مبلغ افزوده شده: `{balanceRequest.Balance:N0}` تومان\n💰 موجودی جدید: `{newBalance:N0}` تومان");
+                                $"✅ افزایش موجودی با موفقیت انجام شد.\n\n👤 کاربر با آیدی عددی: `{update.CallbackQuery.From.Id}`\n💳 مبلغ افزوده شده: `{walletCache.RequestBalance:N0}` تومان\n💰 موجودی جدید: `{newBalance:N0}` تومان");
 
                             await botClient.SendMessage(
-                                chatId: balanceRequest.UserId,
-                                text: $"🎉 موجودی شما با موفقیت افزایش یافت!\n\n💳 مبلغ افزوده شده: `{balanceRequest.Balance:N0}` تومان\n💰 موجودی جدید شما: `{newBalance:N0}` تومان\n\nاز خرید شما سپاسگزاریم 🙏\nاکنون می‌توانید از خدمات ما استفاده کنید.",
+                                chatId: update.CallbackQuery.From.Id,
+                                text: $"🎉 موجودی شما با موفقیت افزایش یافت!\n\n💳 مبلغ افزوده شده: `{walletCache.RequestBalance:N0}` تومان\n💰 موجودی جدید شما: `{newBalance:N0}` تومان\n\nاز خرید شما سپاسگزاریم 🙏\nاکنون می‌توانید از خدمات ما استفاده کنید.",
                                 parseMode: ParseMode.Markdown
                             );
                         }
                     }
-                    CustomMemoryCash.ClearCash(userId);
                 }
                 // عدم تایید پرداخت
                 if (update.CallbackQuery.Data.StartsWith("reject_payment"))
@@ -214,13 +268,16 @@ namespace DayvpnBotWebApi.Services
                     await botClient.AnswerCallbackQuery(update.CallbackQuery.Id);
 
                     if (!long.TryParse(update.CallbackQuery.Data.Split(':')[1], out long userId))
-                        await SendTextToAdminsAsync(botClient, "در تایید پرداخت خطایی رخ داده!!!");
+                        await SendTextToAdminsAsync(botClient, "در رد پرداخت خطایی رخ داده!!!");
 
-                    if (!CustomMemoryCash.HasBalanceRequest(userId))
+                    if (!await _redisCache.ExistsAsync(RedisKeys.Wallet(userId)))
                         await SendTextToAdminsAsync(botClient, "کاربر در کش برای عدم تایید پرداخت وجود ندارد!!!");
 
+                    var walletCache = await _redisCache.GetAsync<WalletCacheClass>(RedisKeys.Wallet(userId));
+                    await _transactionRequestService.UpdateStatusAsync(walletCache.TransactionRequestId.Value, TransactionRequestStatus.Rejected);
+
                     await botClient.SendMessage(
-                        chatId: update.CallbackQuery.Message.Chat.Id, // این مقدار باید از callbackData استخراج بشه
+                        chatId: update.CallbackQuery.Message.Chat.Id,
                         text: """
 ❌ پرداخت شما تأیید نشد.
 
@@ -232,13 +289,12 @@ namespace DayvpnBotWebApi.Services
 """,
                         parseMode: ParseMode.Markdown
                     );
-                    CustomMemoryCash.ClearCash(update.CallbackQuery.Message.Chat.Id);
                 }
 
                 switch (update.CallbackQuery.Data)
                 {
                     case "buy_subscription":
-                        await BuySubscription(botClient, update.CallbackQuery, false);
+                        await BuySubscriptionAsync(botClient, update.CallbackQuery, false);
                         break;
 
                     case "back-to-home":
@@ -246,7 +302,7 @@ namespace DayvpnBotWebApi.Services
                         break;
 
                     case "back-to-buy-subscription":
-                        await BuySubscription(botClient, update.CallbackQuery, true);
+                        await BuySubscriptionAsync(botClient, update.CallbackQuery, true);
                         break;
 
                     case "my_subscriptions":
@@ -268,11 +324,11 @@ namespace DayvpnBotWebApi.Services
                         break;
 
                     case string data when data.StartsWith("request_buy"):
-                        await HandleBuySubscription(botClient, update.CallbackQuery, data);
+                        await HandleBuySubscriptionAsync(botClient, update.CallbackQuery, data);
                         break;
 
                     case string data when data.StartsWith("confirm_buy"):
-                        if (CustomMemoryCash.HasSubscription(update.CallbackQuery.Message.Chat.Id))
+                        if (await _redisCache.ExistsAsync(RedisKeys.Subscription(update.CallbackQuery.Message.Chat.Id)))
                             await HandleConfirmBuySubscription(botClient, update.CallbackQuery, data);
                         else
                             await SendRestartMessageToUser(botClient, update.CallbackQuery);
@@ -332,6 +388,9 @@ namespace DayvpnBotWebApi.Services
         {
             await botClient.AnswerCallbackQuery(callbackQuery.Id);
 
+            using var scope = _scopeFactory.CreateScope();
+            var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
+
             if (!long.TryParse(data.Split('_')[2], out long userTelegramId))
             {
                 // پیام خطا برای ادمین
@@ -344,13 +403,17 @@ namespace DayvpnBotWebApi.Services
                 return;
             }
 
-            CustomMemoryCash.AssignAdminToSendConfig((long)Admins.Nouri, userTelegramId);
+            await _redisCache.UpdateCacheAsync<UserCacheClass>(RedisKeys.User(userTelegramId), async c =>
+            {
+                c.State = UserState.Send_User_Config;
+                await Task.CompletedTask;
+            });
 
             // پیام راهنما برای ادمین
             await SendTextToAdminsAsync(botClient, $"""
             ✅ *حالت ارسال کانفیگ فعال شد!*
 
-            لطفاً *متن کامل کانفیگ* را به صورت *ریپلای* به این پیام ارسال کنید.  
+            لطفاً *متن کامل کانفیگ* را ارسال کنید.  
             ربات به صورت خودکار آن را برای کاربر مورد نظر فوروارد خواهد کرد.
 
             👤 Telegram ID: `{userTelegramId}`
@@ -359,42 +422,43 @@ namespace DayvpnBotWebApi.Services
 
         private async Task DeliverConfigToUserAsync(ITelegramBotClient botClient, Update update)
         {
-            var message = update.Message;
+            //var message = update.Message;
 
-            var userTelegramId = CustomMemoryCash.GetAssignedTelegramIdForSendConfig(message.Chat.Id);
+            //using var scope = _scopeFactory.CreateScope();
+            //var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
 
-            if (userTelegramId.HasValue)
-            {
-                await botClient.SendMessage(
-                    chatId: userTelegramId,
-                    text: message.Text!
-                );
+            //var userTelegramId = await _redisCache.GetAsync(RedisKeys.User(message.Chat.Id));
 
-                await botClient.SendMessage(
-                    chatId: message.Chat.Id,
-                    text: "✅ *کانفیگ با موفقیت برای کاربر ارسال شد.*\n\nممنون از همکاری شما 🙏",
-                    parseMode: ParseMode.Markdown
-                );
-            }
-            else
-            {
-                await botClient.SendMessage(
-                    chatId: message.Chat.Id,
-                    text: """
-                    ⚠️ *خطا در ارسال کانفیگ!*
+            //if (userTelegramId.HasValue)
+            //{
+            //    await botClient.SendMessage(
+            //        chatId: userTelegramId,
+            //        text: message.Text!
+            //    );
 
-                    اطلاعات کاربری برای ارسال کانفیگ در حافظه یافت نشد.  
-                    احتمالاً زمان شما منقضی شده یا مرحله‌ی قبل به‌درستی انجام نشده است.
+            //    await botClient.SendMessage(
+            //        chatId: message.Chat.Id,
+            //        text: "✅ *کانفیگ با موفقیت برای کاربر ارسال شد.*\n\nممنون از همکاری شما 🙏",
+            //        parseMode: ParseMode.Markdown
+            //    );
+            //}
+            //else
+            //{
+            //    await botClient.SendMessage(
+            //        chatId: message.Chat.Id,
+            //        text: """
+            //        ⚠️ *خطا در ارسال کانفیگ!*
 
-                    لطفاً ابتدا دکمه‌ی `ارسال کانفیگ` را در پیام خرید کلیک کرده و سپس پیام را ارسال کنید.
+            //        اطلاعات کاربری برای ارسال کانفیگ در حافظه یافت نشد.  
+            //        احتمالاً زمان شما منقضی شده یا مرحله‌ی قبل به‌درستی انجام نشده است.
 
-                    🆘 در صورت مشکل، با توسعه‌دهنده تماس بگیرید.
-                    """,
-                    parseMode: ParseMode.Markdown
-                );
-            }
+            //        لطفاً ابتدا دکمه‌ی `ارسال کانفیگ` را در پیام خرید کلیک کرده و سپس پیام را ارسال کنید.
 
-            CustomMemoryCash.ClearCash(message.Chat.Id);
+            //        🆘 در صورت مشکل، با توسعه‌دهنده تماس بگیرید.
+            //        """,
+            //        parseMode: ParseMode.Markdown
+            //    );
+            //}
         }
 
         private async Task SendRestartMessageToUser(ITelegramBotClient botClient, Message message)
@@ -425,32 +489,18 @@ namespace DayvpnBotWebApi.Services
             );
         }
 
-
+        // ثبت نام کاربر
         private async Task SignupUserAsync(ITelegramBotClient botClient, Message message)
         {
             using var scope = _scopeFactory.CreateScope();
             var _userService = scope.ServiceProvider.GetRequiredService<UserService>();
 
-            // Register User
-            if (!await _userService.CheckUserExists(message.Chat.Id))
-            {
-                Core.Entities.User user = new Core.Entities.User()
-                {
-                    TelegramId = message.Chat.Id,
-                    FirstName = message.Chat.FirstName ?? string.Empty,
-                    LastName = message.Chat.LastName ?? string.Empty,
-                    RegistrationDate = DateTime.UtcNow,
-                    Balance = 0,
-                };
+            ServiceResult result = await _userService.RegisterUser(message);
 
-                ServiceResult result = await _userService.RegisterUser(user);
-
+            if (result.IsSuccess)
                 await SendTextToAdminsAsync(botClient, result.Message);
-
-                Console.Write($"Success: {result.IsSuccess}");
-                Console.Write($"Message: {result.Message}");
-            }
         }
+
         private Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8; // برای پشتیبانی یونیکد
@@ -488,10 +538,10 @@ namespace DayvpnBotWebApi.Services
 
 
         // start
-        private async Task Start(ITelegramBotClient botClient, Update update)
+        private async Task StartAsync(ITelegramBotClient botClient, Update update)
         {
             var message = update.Message;
-            await GlobalStart(botClient, message);
+            await GlobalStartAsync(botClient, message);
         }
 
         // start again
@@ -515,11 +565,11 @@ namespace DayvpnBotWebApi.Services
             }
             else
             {
-                await GlobalStart(botClient, message);
+                await GlobalStartAsync(botClient, message);
             }
         }
 
-        private async Task GlobalStart(ITelegramBotClient botClient, Message message)
+        private async Task GlobalStartAsync(ITelegramBotClient botClient, Message message)
         {
             string fullName = $"{message.Chat.FirstName} {message.Chat.LastName}";
 
@@ -566,7 +616,7 @@ namespace DayvpnBotWebApi.Services
         }
 
         // buy subscription
-        private async Task BuySubscription(ITelegramBotClient botClient, CallbackQuery callBackQuery, bool removeLastMessage)
+        private async Task BuySubscriptionAsync(ITelegramBotClient botClient, CallbackQuery callBackQuery, bool removeLastMessage)
         {
             await botClient.AnswerCallbackQuery(callBackQuery.Id);
 
@@ -585,8 +635,8 @@ namespace DayvpnBotWebApi.Services
             }
 
             using var scope = _scopeFactory.CreateScope();
-            var _serviceService = scope.ServiceProvider.GetRequiredService<ServicesService>();
-            var services = await _serviceService.GetAll();
+            var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
+            var services = await _redisCache.GetAllAsync<Service>("services:list");
 
             var inlineKeyboardButtons = new List<InlineKeyboardButton[]>();
 
@@ -608,7 +658,7 @@ namespace DayvpnBotWebApi.Services
                 replyMarkup: new InlineKeyboardMarkup(inlineKeyboardButtons));
         }
 
-        private async Task HandleBuySubscription(ITelegramBotClient botClient, CallbackQuery callBackQuery, string data)
+        private async Task HandleBuySubscriptionAsync(ITelegramBotClient botClient, CallbackQuery callBackQuery, string data)
         {
             await botClient.AnswerCallbackQuery(callBackQuery.Id);
 
@@ -627,32 +677,35 @@ namespace DayvpnBotWebApi.Services
             }
 
             if (!int.TryParse(data.Split('_')[2], out int serviceId))
-                await SendRestartMessageToUser(botClient, callBackQuery);
-
-            using var scope = _scopeFactory.CreateScope();
-            var _servicesService = scope.ServiceProvider.GetRequiredService<ServicesService>();
-            var service = await _servicesService.GetByIdAsync(serviceId);
-            if (service == null)
             {
                 await SendRestartMessageToUser(botClient, callBackQuery);
                 return;
             }
 
-            CustomMemoryCash.AddSubscription(message.Chat.Id, service.Id);
+            using var scope = _scopeFactory.CreateScope();
+            var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
+
+            // اضافه کردن سرویس به کش
+            var cacheResult = await _redisCache.CacheSelectedServiceForUserAsync(message.Chat.Id, serviceId);
+            if (!cacheResult.IsSuccess || cacheResult.Data == null)
+            {
+                await SendRestartMessageToUser(botClient, callBackQuery);
+                return;
+            }
 
             string confirmText = $"""
 🛒 *پیش‌نمایش خرید سرویس DayVPN*
 
-🔹 *نام پلن:* {service.Name}
-📅 *مدت زمان:* {service.DurationInDays} روز
-📦 *حجم:* {service.DataQuotaGB} گیگ
-👥 *تعداد کاربران مجاز:* {service.AllowedUsersCount} نفر
-💳 *قیمت:* {service.Price:N0} تومان
+🔹 *نام پلن:* {cacheResult.Data.Name}
+📅 *مدت زمان:* {cacheResult.Data.DurationInDays} روز
+📦 *حجم:* {cacheResult.Data.DataQuotaGB} گیگ
+👥 *تعداد کاربران مجاز:* {cacheResult.Data.AllowedUsersCount} نفر
+💳 *قیمت:* {cacheResult.Data.Price:N0} تومان
 
 آیا از انتخاب خود مطمئن هستید؟ 😊
 برای تایید، دکمه زیر را لمس کنید.
 """;
-            string callBackData = $"confirm_buy_{service.Id}";
+            string callBackData = $"confirm_buy_{cacheResult.Data.Id}";
 
             await botClient.SendMessage(
                 chatId: message!.Chat.Id,
@@ -671,8 +724,6 @@ namespace DayvpnBotWebApi.Services
             await botClient.AnswerCallbackQuery(callBackQuery.Id);
 
             var message = callBackQuery.Message;
-
-            CustomMemoryCash.RefreshCashExpireTime(message.Chat.Id);
 
             if (message != null)
             {
@@ -704,34 +755,43 @@ namespace DayvpnBotWebApi.Services
                 }));
         }
 
-        private async Task SetSubName(ITelegramBotClient botClient, Update update)
+        private async Task SetSubNameAsync(ITelegramBotClient botClient, Update update)
         {
             var message = update.Message;
+            var userId = message.Chat.Id;
 
-            if (CustomMemoryCash.HasSubscription(message.Chat.Id))
+            using var scope = _scopeFactory.CreateScope();
+            var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
+
+            if (await _redisCache.ExistsAsync(RedisKeys.Subscription(userId)))
             {
                 const string SubNameRegex = "^(?i)[a-z0-9 ]{1,30}$";
                 if (Regex.IsMatch(message.Text, SubNameRegex))
                 {
-                    CustomMemoryCash.SubmitSubscriptionName(message.Chat.Id, message.Text.Trim('_'));
-                    var subscriptionRequest = CustomMemoryCash.GetSubscriptionRequest(message.Chat.Id);
+                    var updateResult = await _redisCache.UpdateCacheAsync<SubscriptionCacheClass>(RedisKeys.Subscription(userId), async c =>
+                    {
+                        c.RequestedSubscriptioName = message.Text;
+                        await Task.CompletedTask;
+                    });
+                    if (!updateResult.IsSuccess)
+                    {
+                        await SendRestartMessageToUser(botClient, message);
+                        return;
+                    }
+
+                    var subscriptionRequest = updateResult.Data;
 
                     if (subscriptionRequest != null)
                     {
-                        using var scope = _scopeFactory.CreateScope();
-                        var _servicesService = scope.ServiceProvider.GetRequiredService<ServicesService>();
-
-                        var service = await _servicesService.GetByIdAsync(subscriptionRequest.ServiceId);
-
                         var previewText = $"""
                         📝 *بررسی نهایی و انتخاب نحوه پرداخت*
 
-                        📛 نام انتخابی: `{subscriptionRequest.SubscriptionName}`
-                        🔹 سرویس: *{service.Name}*
-                        📦 حجم: `{service.DataQuotaGB}` گیگابایت  
-                        ⏳ مدت زمان: `{service.DurationInDays}` روز  
-                        👥 کاربران مجاز: `{service.AllowedUsersCount}` نفر  
-                        💳 مبلغ قابل پرداخت: `{service.Price:N0}` تومان
+                        📛 نام انتخابی: `{subscriptionRequest.RequestedSubscriptioName}`
+                        🔹 سرویس: *{subscriptionRequest.Name}*
+                        📦 حجم: `{subscriptionRequest.DataQuotaGB}` گیگابایت  
+                        ⏳ مدت زمان: `{subscriptionRequest.DurationInDays}` روز  
+                        👥 کاربران مجاز: `{subscriptionRequest.AllowedUsersCount}` نفر  
+                        💳 مبلغ قابل پرداخت: `{subscriptionRequest.Price:N0}` تومان
 
                         لطفاً نحوه پرداخت خود را انتخاب نمایید.
                         """;
@@ -766,20 +826,29 @@ namespace DayvpnBotWebApi.Services
         {
             await botClient.AnswerCallbackQuery(callbackQuery.Id);
             var message = callbackQuery.Message;
+            var userId = message.Chat.Id;
 
-            if (CustomMemoryCash.HasSubscription(message.Chat.Id))
+            using var scope = _scopeFactory.CreateScope();
+            var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
+
+            if (await _redisCache.ExistsAsync(RedisKeys.Subscription(userId)))
             {
                 // Validate Balance and Insert Subscription into Database
-                using var scope = _scopeFactory.CreateScope();
                 var _subscriptionService = scope.ServiceProvider.GetRequiredService<SubscriptionService>();
-
                 var result = await _subscriptionService.InsertSubscription(message.Chat.Id);
 
                 await botClient.SendMessage(
                     chatId: message.Chat.Id,
                     text: result.Message,
-                    parseMode: ParseMode.Markdown
-                    );
+                    parseMode: ParseMode.Markdown,
+                    replyMarkup: new InlineKeyboardMarkup(new[]
+                    {
+                        new[]
+                        {
+                            InlineKeyboardButton.WithCallbackData("💰 افزایش موجودی", "increase_balance")
+                        }
+                    })
+                );
 
                 if (result.IsSuccess && result is ServiceResult<SubscriptionResultDto> successResult)
                 {
@@ -823,19 +892,30 @@ namespace DayvpnBotWebApi.Services
             var userId = message.Chat.Id;
 
             using var scope = _scopeFactory.CreateScope();
+            var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
 
-            if (CustomMemoryCash.HasSubscription(userId))
-            {
-                var subscriptionRequest = CustomMemoryCash.GetSubscriptionRequest(userId);
-                var _servicesService = scope.ServiceProvider.GetRequiredService<ServicesService>();
-                var service = await _servicesService.GetByIdAsync(subscriptionRequest.ServiceId);
-                CustomMemoryCash.SetPaymentMethod(userId, PaymentMethod.DirectPay);
-                await ConfirmUserAmountAsync(botClient, null, service.Price, callbackQuery);
-            }
-            else
+            var result = await _redisCache.ExistsAsync<SubscriptionCacheClass>(RedisKeys.Subscription(userId));
+            if (!result.IsSuccess || result.Data == null)
             {
                 await SendRestartMessageToUser(botClient, callbackQuery);
+                return;
             }
+
+            var service = result.Data;
+
+            await _redisCache.SetAsync<WalletCacheClass>(RedisKeys.Wallet(userId), new WalletCacheClass()
+            {
+                PaymentMethod = PaymentMethod.DirectPay,
+                RequestBalance = service.Price,
+            });
+
+            await _redisCache.UpdateCacheAsync<UserCacheClass>(RedisKeys.User(userId), async c =>
+            {
+                c.State = UserState.Increase_Balance;
+                await Task.CompletedTask;
+            });
+
+            await ConfirmUserAmountAsync(botClient, null, service.Price, callbackQuery);
         }
 
         private async Task ApplyDirectSubscription(ITelegramBotClient botClient, CallbackQuery callbackQuery)
@@ -844,12 +924,11 @@ namespace DayvpnBotWebApi.Services
             var userId = message.Chat.Id;
 
             using var scope = _scopeFactory.CreateScope();
+            var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
 
-            if (CustomMemoryCash.HasSubscription(userId))
+            if (await _redisCache.ExistsAsync(RedisKeys.Subscription(userId)))
             {
                 var _subscriptionService = scope.ServiceProvider.GetRequiredService<SubscriptionService>();
-
-                CustomMemoryCash.SetUserState(userId, UserState.Buy_Subscription);
 
                 // Validate Balance and Insert Subscription into Database
                 var result = await _subscriptionService.InsertSubscription(message.Chat.Id);
@@ -898,8 +977,26 @@ namespace DayvpnBotWebApi.Services
         private async Task IncreaseBalance(ITelegramBotClient botClient, CallbackQuery callbackQuery)
         {
             await botClient.AnswerCallbackQuery(callbackQuery.Id);
+            var userId = callbackQuery.Message.Chat.Id;
 
-            var chatId = callbackQuery.Message.Chat.Id;
+            using var scope = _scopeFactory.CreateScope();
+            var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
+            var _userService = scope.ServiceProvider.GetRequiredService<UserService>();
+
+            var user = await _userService.GetUserProfileByTelegramIdAsync(userId);
+
+            await _redisCache.SetAsync<UserCacheClass>(RedisKeys.User(userId), new UserCacheClass()
+            {
+                RealUserId = user.Id,
+                FullName = user.FullName,
+                State = UserState.Increase_Balance,
+                UserId = userId,
+            });
+
+            await _redisCache.SetAsync<WalletCacheClass>(RedisKeys.Wallet(userId), new WalletCacheClass()
+            {
+                PaymentMethod = PaymentMethod.WalletPay,
+            });
 
             string message = """
     💳 افزایش موجودی
@@ -913,18 +1010,16 @@ namespace DayvpnBotWebApi.Services
     🔐 پرداخت شما کاملاً امن بوده و اطلاعات محرمانه محفوظ می‌ماند.
     """;
 
+
             await botClient.SendMessage(
-                chatId: chatId,
+                chatId: userId,
                 text: message,
                 parseMode: ParseMode.Markdown
             );
-
-            // به‌روزرسانی وضعیت کاربر برای مرحله بعد
-            CustomMemoryCash.AddBalance(chatId);
         }
 
 
-        private async Task SetBalance(ITelegramBotClient botClient, Update update)
+        private async Task SetBalanceAsync(ITelegramBotClient botClient, Update update)
         {
             var message = update.Message;
             var chatId = message.Chat.Id;
@@ -969,9 +1064,23 @@ namespace DayvpnBotWebApi.Services
                 chatId = callbackQuery.Message.Chat.Id;
             }
 
-            CustomMemoryCash.AddBalance(chatId);
-            CustomMemoryCash.SetBalance(chatId, amount);
-            CustomMemoryCash.SetUserState(chatId, UserState.Increase_Balance);
+            using var scope = _scopeFactory.CreateScope();
+            var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
+
+            if (!await _redisCache.ExistsAsync(RedisKeys.Wallet(chatId)))
+            {
+                if (callbackQuery != null)
+                    await SendRestartMessageToUser(botClient, callbackQuery);
+                else
+                    await SendRestartMessageToUser(botClient, message);
+                return;
+            }
+
+            await _redisCache.UpdateCacheAsync<WalletCacheClass>(RedisKeys.Wallet(chatId), async c =>
+            {
+                c.RequestBalance = amount;
+                await Task.CompletedTask;
+            });
 
             string rialAmount = (amount * 10).ToString("N0"); // چون هر تومان = 10 ریال
 
@@ -1109,16 +1218,18 @@ namespace DayvpnBotWebApi.Services
         }
 
         // ارسال عکس و متن به ادمین ها
-        private async Task SendConfirmPhotoToAdminsAsync(ITelegramBotClient botClient, Stream photoStream, string caption, long userId)
+        private async Task SendConfirmPhotoToAdminsAsync(ITelegramBotClient botClient, Stream photoStream, string caption, long userId, string data)
         {
             long[] adminIds = { (long)Admins.Nouri /*, Admins.OtherAdminId */ };
+
+            var trackingCode = data;
 
             var keyboard = new InlineKeyboardMarkup(new[]
             {
                 new[]
                 {
-                    InlineKeyboardButton.WithCallbackData("✅ تأیید پرداخت", $"confirm_payment:{userId}"),
-                    InlineKeyboardButton.WithCallbackData("❌ رد پرداخت", $"reject_payment:{userId}")
+                    InlineKeyboardButton.WithCallbackData("✅ تأیید پرداخت", $"confirm_payment:{trackingCode}"),
+                    InlineKeyboardButton.WithCallbackData("❌ رد پرداخت", $"reject_payment:{trackingCode}")
                 }
             });
 

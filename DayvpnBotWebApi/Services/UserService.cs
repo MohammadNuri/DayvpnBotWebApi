@@ -3,6 +3,8 @@ using DayvpnBotWebApi.Core.Entities;
 using DayvpnBotWebApi.Shared;
 using Microsoft.EntityFrameworkCore;
 using System.Linq.Expressions;
+using Telegram.Bot.Types;
+using User = DayvpnBotWebApi.Core.Entities.User;
 
 namespace DayvpnBotWebApi.Services
 {
@@ -10,10 +12,21 @@ namespace DayvpnBotWebApi.Services
     {
         private readonly AppDbContext _db;
         private readonly AppLogService _appLogService;
-        public UserService(AppDbContext db, AppLogService appLogService)
+        private readonly TransactionService _transactionService;
+        private readonly TransactionRequestService _transactionRequestService;
+        private readonly RedisCacheManager _redisCache;
+
+        public UserService(AppDbContext db, 
+            AppLogService appLogService,
+            TransactionService transactionService,
+            TransactionRequestService transactionRequestService,
+            RedisCacheManager redisCache)
         {
             _db = db;
             _appLogService = appLogService;
+            _transactionService = transactionService;
+            _transactionRequestService = transactionRequestService;
+            _redisCache = redisCache;
         }
 
         public async Task<List<User>> GetAllAsync()
@@ -35,7 +48,7 @@ namespace DayvpnBotWebApi.Services
                 var affected = await _db.SaveChangesAsync();
                 if (affected > 0)
                 {
-                    return await _appLogService.LogUserRegisteredAsync(model.FirstName, model.LastName, model.Id);
+                    return await _appLogService.LogUserRegisteredAsync(model.FirstName, model.LastName, model.Id, model.TelegramId);
                 }
                 return ServiceResult.Failed("خطا در ایجاد کاربر.");
             }
@@ -93,9 +106,28 @@ namespace DayvpnBotWebApi.Services
             }
         }
 
-        public async Task<ServiceResult> RegisterUser(User user)
+        public async Task<ServiceResult> RegisterUser(Message message)
         {
-            return await CreateAsync(user);
+            if (!await CheckUserExists(message.Chat.Id))
+            {
+                Core.Entities.User user = new Core.Entities.User()
+                {
+                    TelegramId = message.Chat.Id,
+                    FirstName = message.Chat.FirstName ?? string.Empty,
+                    LastName = message.Chat.LastName ?? string.Empty,
+                    RegistrationDate = DateTime.UtcNow,
+                    Balance = 0,
+                };
+
+                var result = await CreateAsync(user);
+
+                Console.Write($"Success: {result.IsSuccess}");
+                Console.Write($"Message: {result.Message}");
+
+                return result;
+            }
+
+            return ServiceResult.Failed("کاربر وجود دارد.");
         }
 
         public async Task<bool> CheckUserExists(long telegramId)
@@ -103,27 +135,44 @@ namespace DayvpnBotWebApi.Services
             return await _db.Users.AnyAsync(c => c.TelegramId == telegramId);
         }
 
-        public async Task<ServiceResult<decimal>> AddUserBalanceAsync(BalanceClassDTO balanceRequest)
+        public async Task<ServiceResult<decimal>> AddUserBalanceAsync(WalletCacheClass walletCache, long userId, int transactionRequestId)
         {
-            var user = await _db.Users.FirstOrDefaultAsync(c => c.TelegramId == balanceRequest.UserId);
+            var requestBalance = walletCache.RequestBalance;
+
+            var user = await _db.Users.FirstOrDefaultAsync(c => c.TelegramId == userId);
             if (user == null)
             {
-                await _appLogService.LogAddBalanceFailureAsync(user, balanceRequest.Balance, "کاربر در دیتابیس یافت نشد.");
+                await _appLogService.LogAddBalanceFailureAsync(user, requestBalance, "کاربر در دیتابیس یافت نشد.");
                 return ServiceResult<decimal>.Failed("❌ کاربر مورد نظر برای افزایش موجودی پیدا نشد.");
             }
 
             var oldBalance = user.Balance;
-            user.Balance += balanceRequest.Balance;
+            user.Balance += requestBalance;
 
             try
             {
                 await _db.SaveChangesAsync();
-                await _appLogService.LogAddBalanceSuccessAsync(user, oldBalance, balanceRequest.Balance, user.Balance);
+                await _appLogService.LogAddBalanceSuccessAsync(user, oldBalance, requestBalance, user.Balance);
+                await _transactionRequestService.UpdateStatusAsync(transactionRequestId,TransactionRequestStatus.Approved);
+                await _transactionService.CreateAsync(new Transaction
+                {
+                    UserId = user.Id,
+                    Type = TransactionType.Deposit,
+                    Amount = requestBalance,
+                    Description = $"افزایش موجودی به مبلغ {requestBalance:N0} تومان برای کاربر با شناسه {user.TelegramId} (UserId: {user.Id}) " +
+                        $"از طریق {walletCache.PaymentMethod?.ToString() ?? "نامشخص"}، مربوط به درخواست پرداخت شماره #{transactionRequestId}",
+                    PaymentMethod = walletCache.PaymentMethod,
+                    PaymentImage = walletCache.PaymentImage,
+                    Status = TransactionStatus.Approved
+                });
+
+                await _redisCache.InvalidateAsync(RedisKeys.Wallet(userId));
+
                 return ServiceResult<decimal>.Success(user.Balance, "✅ موجودی کاربر با موفقیت افزایش یافت.");
             }
             catch (Exception ex)
             {
-                await _appLogService.LogAddBalanceFailureAsync(user, balanceRequest.Balance, $"خطا در ذخیره اطلاعات: {ex.Message}");
+                await _appLogService.LogAddBalanceFailureAsync(user, requestBalance, $"خطا در ذخیره اطلاعات: {ex.Message}");
                 return ServiceResult<decimal>.Failed("❌ خطا هنگام افزایش موجودی کاربر.");
             }
         }
@@ -139,6 +188,7 @@ namespace DayvpnBotWebApi.Services
 
             return new UserProfileDTO()
             {
+                Id = user.Id,
                 FullName = user.FirstName + " " + user.LastName,
                 TelegramId = user.TelegramId,
                 Balance = user.Balance,

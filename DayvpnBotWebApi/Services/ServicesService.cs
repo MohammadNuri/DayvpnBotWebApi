@@ -13,7 +13,7 @@ namespace DayvpnBotWebApi.Services
             _db = db;
         }
 
-        public async Task<List<Service>> GetAll()
+        public async Task<List<Service>> GetAllAsync()
         {
             return await _db.Services.Where(c => c.IsActive).ToListAsync();
         }
