@@ -12,6 +12,7 @@
         public int DurationDays { get; set; }
         public int UserCount { get; set; }
         public decimal Price { get; set; }
+        public string TrackingCode { get; set; } = string.Empty;
     }
 
 }

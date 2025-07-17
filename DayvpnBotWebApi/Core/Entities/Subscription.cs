@@ -13,7 +13,7 @@
         public string SubscriptionLink { get; set; } = string.Empty;
         public DateTime? LastUpdatedDate { get; set; }
         public string SubscriptionStatus { get; set; } = string.Empty;
-
+        public string TrackingCode { get; set; } = string.Empty;
         public int UserId { get; set; }
         public User User { get; set; } = null!;
 

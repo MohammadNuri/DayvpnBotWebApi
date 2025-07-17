@@ -151,6 +151,8 @@ namespace DayvpnBotWebApi.Services
 
             try
             {
+                Random rnd = new Random();
+                string trackingCode = $"TRK-{telegramId % 10000}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds() % 100000}-{rnd.Next(100, 999)}";
                 var subscription = new Subscription
                 {
                     SubscriptionCode = Guid.NewGuid().ToString(),
@@ -160,7 +162,8 @@ namespace DayvpnBotWebApi.Services
                     ServiceId = subscriptionRequest.ServiceId,
                     ActivationDate = DateTime.UtcNow,
                     ExpirationDate = DateTime.UtcNow.AddDays(service.DurationInDays),
-                    IsActive = true
+                    IsActive = true,
+                    TrackingCode = trackingCode,
                 };
 
                 await _db.Subscriptions.AddAsync(subscription);
@@ -210,14 +213,17 @@ namespace DayvpnBotWebApi.Services
                     DurationDays = service.DurationInDays,
                     UserCount = service.AllowedUsersCount,
                     Price = service.Price,
-                }, """
-                🎉 *درخواست خرید شما با موفقیت ثبت شد!*
+                    TrackingCode = trackingCode
+                }, $"""
+🎉 *درخواست خرید شما با موفقیت ثبت شد!*
 
-                🕓 لطفاً کمی صبر کنید تا سرویس اختصاصی شما ارسال شود.  
-                در صورت بروز تأخیر یا مشکل، حتماً با پشتیبانی در تماس باشید.
+🕓 لطفاً کمی صبر کنید تا سرویس اختصاصی شما ارسال شود.  
+در صورت بروز تأخیر یا مشکل، حتماً با پشتیبانی در تماس باشید.
 
-                🆘 پشتیبانی: @DarvyXe
-                """);
+🆘 پشتیبانی: @DarvyXe
+
+🔎 کد پیگیری شما: `{trackingCode}`
+""");
             }
             catch (Exception ex)
             {
@@ -239,6 +245,19 @@ namespace DayvpnBotWebApi.Services
                 🆘 پشتیبانی: @DarvyXe
                 """);
             }
+        }
+
+        public async Task<Subscription?> GetByTrackingCodeAsync(string trackingCode)
+        {
+            var subscription = await _db.Subscriptions
+                .Include(c => c.User)
+                .Include(c => c.Service)
+                .FirstOrDefaultAsync(c => c.TrackingCode == trackingCode);
+
+            if (subscription == null)
+                return null;
+
+            return subscription;
         }
     }
 }
