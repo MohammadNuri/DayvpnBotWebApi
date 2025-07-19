@@ -17,8 +17,6 @@ namespace DayvpnBotWebApi.Core.Entities
 
         public PaymentMethod? PaymentMethod { get; set; }
 
-        public byte[]? PaymentImage { get; set; }
-
         public TransactionStatus Status { get; set; } = TransactionStatus.Pending;
     }
 }

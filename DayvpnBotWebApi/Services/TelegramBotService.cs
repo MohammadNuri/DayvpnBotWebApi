@@ -116,13 +116,6 @@ namespace DayvpnBotWebApi.Services
                             using var stream = new MemoryStream();
                             await botClient.DownloadFile(file.FilePath, stream);
 
-                            // ذخیره عکس در حافظه برای این کاربر
-                            await _redisCache.UpdateCacheAsync<WalletCacheClass>(RedisKeys.Wallet(message.Chat.Id), async c =>
-                            {
-                                c.PaymentImage = stream.ToArray();
-                                await Task.CompletedTask;
-                            });
-
                             // اطلاعات کاربر برای ارسال به ادمین
                             string fullName = $"{message.Chat.FirstName} {message.Chat.LastName ?? ""}".Trim();
                             string userIdStr = message.Chat.Id.ToString();
@@ -146,7 +139,6 @@ namespace DayvpnBotWebApi.Services
                             var transactionRequestResult = await _transactionRequestService.CreateAsync(new TransactionRequest()
                             {
                                 Amount = walletCache.RequestBalance,
-                                PaymentImage = adminStream.ToArray(),
                                 PaymentMethod = walletCache.PaymentMethod.Value,
                                 UserId = user.RealUserId,
                                 TrackingCode = $"{rnd.Next(1000, 9999)}{userId}",
@@ -435,7 +427,6 @@ namespace DayvpnBotWebApi.Services
 
                 walletCache = new WalletCacheClass()
                 {
-                    PaymentImage = transanctionRequest.PaymentImage,
                     PaymentMethod = transanctionRequest.PaymentMethod,
                     RequestBalance = transanctionRequest.Amount,
                     TransactionRequestId = transanctionRequest.Id,
@@ -707,7 +698,7 @@ namespace DayvpnBotWebApi.Services
 
             using var scope = _scopeFactory.CreateScope();
             var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
-            var services = await _redisCache.GetAllAsync<Service>("services:list");
+            var services = await _redisCache.GetAllAsync<Service>(RedisKeys.ServicesList);
 
             var inlineKeyboardButtons = new List<InlineKeyboardButton[]>();
 

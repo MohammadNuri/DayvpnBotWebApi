@@ -162,7 +162,6 @@ namespace DayvpnBotWebApi.Services
                     Description = $"افزایش موجودی به مبلغ {requestBalance:N0} تومان برای کاربر با شناسه {user.TelegramId} (UserId: {user.Id}) " +
                         $"از طریق {walletCache.PaymentMethod?.ToString() ?? "نامشخص"}، مربوط به درخواست پرداخت شماره #{transactionRequestId}",
                     PaymentMethod = walletCache.PaymentMethod,
-                    PaymentImage = walletCache.PaymentImage,
                     Status = TransactionStatus.Approved
                 });
 

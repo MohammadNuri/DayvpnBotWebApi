@@ -9,5 +9,6 @@
         public static string Wallet(long userId) => $"wallet:{userId}";
         public static string Wallet() => "wallet";
         public static string UsersList => "users:list";
+        public static string ServicesList => "services:list";
     }
 }
