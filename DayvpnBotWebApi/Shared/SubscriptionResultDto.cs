@@ -7,6 +7,7 @@
         public decimal NewBalance { get; set; }
         public DateTime PurchasedAt { get; set; }
 
+        public string SubscriptionName { get; set; } = string.Empty;
         public string ServiceName { get; set; } = string.Empty;
         public int VolumeGb { get; set; }
         public int DurationDays { get; set; }

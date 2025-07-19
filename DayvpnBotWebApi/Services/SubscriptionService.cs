@@ -201,10 +201,12 @@ namespace DayvpnBotWebApi.Services
 
                 await _redisCache.InvalidateAsync(RedisKeys.Subscription(telegramId));
                 await _redisCache.InvalidateAsync(RedisKeys.Wallet(telegramId));
+                await _redisCache.InvalidateAsync(RedisKeys.User(telegramId));
 
                 return ServiceResult<SubscriptionResultDto>.Success(new SubscriptionResultDto()
                 {
                     UserFullName = user.FirstName + " " + user.LastName,
+                    SubscriptionName = subscription.SubscriptionName,
                     TelegramId = user.TelegramId,
                     NewBalance = user.Balance,
                     PurchasedAt = DateTime.UtcNow,

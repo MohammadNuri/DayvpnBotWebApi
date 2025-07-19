@@ -92,6 +92,8 @@ namespace DayvpnBotWebApi.Services
                                         text: message.Text,
                                         parseMode: ParseMode.Markdown
                                     );
+
+                                await SendTextToAdminsAsync(botClient, $"✅ پیام شما با موفقیت برای کاربر با شناسه {userId} ارسال شد.");
                             }
                         }
 
@@ -125,8 +127,8 @@ namespace DayvpnBotWebApi.Services
                                 await SendRestartMessageToUser(botClient, message);
                                 return;
                             }
-                            string balance = walletCache.RequestBalance.ToString(); // قیمت
-                            string caption = $"📥 درخواست پرداخت جدید دریافت شد.\n\n👤 نام کاربر: {fullName}\n🆔 آیدی عددی: {userIdStr}\n💳 مبلغ: {balance:N0}\n\n📌 لطفاً بررسی و تأیید کنید.";
+
+                            string caption = $"📥 درخواست پرداخت جدید دریافت شد.\n\n👤 نام کاربر: {fullName}\n🆔 آیدی عددی: {userIdStr}\n💳 مبلغ: {walletCache.RequestBalance:N0} تومان\n\n📌 لطفاً بررسی و تأیید کنید.";
 
                             // ارسال عکس به ادمین همراه با کپشن
                             using var adminStream = new MemoryStream(stream.ToArray()); // برای اطمینان دوباره بخونیم
@@ -156,7 +158,7 @@ namespace DayvpnBotWebApi.Services
                             await botClient.SendMessage(
                                 chatId: message.Chat.Id,
                                 text: $"✅ عکس پرداخت با موفقیت دریافت شد.\n" +
-                                      $"📌 شماره پیگیری شما: *{transactionRequestResult.Data?.TrackingCode}*\n\n" +
+                                      $"📌 کد پیگیری پرداخت شما: *{transactionRequestResult.Data?.TrackingCode}*\n\n" +
                                       $"🕓 لطفاً منتظر بمانید تا پرداخت شما توسط مدیریت بررسی و تأیید شود.\n" +
                                       $"📢 پس از تأیید، موجودی شما به‌روزرسانی خواهد شد و اطلاع‌رسانی انجام می‌گردد.",
                                 parseMode: ParseMode.Markdown
@@ -228,7 +230,11 @@ namespace DayvpnBotWebApi.Services
                         else
                         {
                             await SendTextToAdminsAsync(botClient,
-                                $"✅ افزایش موجودی با موفقیت انجام شد.\n\n👤 کاربر با آیدی عددی: `{userId}`\n💳 مبلغ افزوده شده: `{walletCache.RequestBalance:N0}` تومان\n💰 موجودی جدید: `{newBalance:N0}` تومان");
+                                $"✅ افزایش موجودی با موفقیت انجام شد.\n\n" +
+                                $"👤 کاربر با آیدی عددی: `{userId}`\n" +
+                                $"💳 مبلغ افزوده شده: `{walletCache.RequestBalance:N0}` تومان\n" +
+                                $"💰 موجودی جدید: `{newBalance:N0}` تومان\n" +
+                                $"🧾 کد پیگیری پرداخت: `{walletCache.TrackingCode}`");
 
                             await botClient.SendMessage(
                                 chatId: userId,
@@ -265,19 +271,30 @@ namespace DayvpnBotWebApi.Services
 
                     await _transactionRequestService.UpdateStatusAsync(walletCache.TransactionRequestId.Value, TransactionRequestStatus.Rejected);
                     await _redisCache.InvalidateAsync(RedisKeys.Wallet(userId));
+                    await _redisCache.InvalidateAsync(RedisKeys.User(userId));
 
                     await botClient.SendMessage(
                         chatId: userId,
                         text: """
-❌ پرداخت شما تأیید نشد.
-
-ممکن است رسید ارسال‌شده نامعتبر یا ناقص بوده باشد، یا پرداختی در سیستم ثبت نشده باشد.
-
-🛠 لطفاً مجدداً رسید معتبر ارسال کنید یا برای بررسی بیشتر با پشتیبانی در تماس باشید.
-
-🆘 آیدی پشتیبانی: @DarvyXe
-""",
-                        parseMode: ParseMode.Markdown
+                    ❌ پرداخت شما تأیید نشد.
+                    
+                    ممکن است رسید ارسال‌شده نامعتبر یا ناقص بوده باشد، یا پرداختی در سیستم ثبت نشده باشد.
+                    
+                    🔄 لطفاً فرآیند افزایش موجودی را از ابتدا مجدداً انجام دهید.
+                    
+                    🛠 برای راهنمایی بیشتر می‌توانید با پشتیبانی در تماس باشید.
+                    
+                    🆘 آیدی پشتیبانی: @DarvyXe
+                    """,
+                        parseMode: ParseMode.Markdown,
+                        replyMarkup: new InlineKeyboardMarkup(new[]
+                        {
+                            new[]
+                            {
+                                InlineKeyboardButton.WithCallbackData("🏠 صفحه اصلی", "back-to-home"),
+                                InlineKeyboardButton.WithCallbackData("🔁 شروع مجدد", "increase_balance")
+                            }
+                        })
                     );
 
                     // 🔔 پیام اطلاع‌رسانی به ادمین
@@ -295,7 +312,7 @@ namespace DayvpnBotWebApi.Services
                         break;
 
                     case "back-to-home":
-                        await Start(botClient, update.CallbackQuery, true);
+                        await Start(botClient, update.CallbackQuery, false);
                         break;
 
                     case "back-to-buy-subscription":
@@ -396,6 +413,7 @@ namespace DayvpnBotWebApi.Services
             if (await _redisCache.ExistsAsync(RedisKeys.Wallet(userId)))
             {
                 walletCache = await _redisCache.GetAsync<WalletCacheClass>(RedisKeys.Wallet(userId));
+                walletCache.TrackingCode = trackingCode;
             }
             else
             {
@@ -430,6 +448,7 @@ namespace DayvpnBotWebApi.Services
                     PaymentMethod = transanctionRequest.PaymentMethod,
                     RequestBalance = transanctionRequest.Amount,
                     TransactionRequestId = transanctionRequest.Id,
+                    TrackingCode = trackingCode,
                 };
             }
 
@@ -711,7 +730,7 @@ namespace DayvpnBotWebApi.Services
                 inlineKeyboardButtons.Add(new[] { button });
             }
 
-            inlineKeyboardButtons.Add(new[] { InlineKeyboardButton.WithCallbackData("بازگشت به صفحه اصلی 🏠", "back-to-home") });
+            inlineKeyboardButtons.Add(new[] { InlineKeyboardButton.WithCallbackData("صفحه اصلی 🏠", "back-to-home") });
 
             await botClient.SendMessage(
                 chatId: message!.Chat.Id,
@@ -917,13 +936,15 @@ namespace DayvpnBotWebApi.Services
                     💰 موجودی جدید: `{data.NewBalance:N0}` تومان  
                     📅 زمان خرید: {PersianHelper.GetPersianCalendar(data.PurchasedAt)}
                     
-                    🔹 سرویس: *{data.ServiceName}*
-                    📦 حجم: *{data.VolumeGb} گیگ*
-                    👥 کاربران مجاز: *{data.UserCount} نفر*
-                    📆 مدت اعتبار: *{data.DurationDays} روز*  
-                    💳 قیمت پرداختی: `{data.Price:N0}` تومان
+                    🔖 نام اشتراک: *{data.SubscriptionName}*  
+                    📡 سرویس: *{data.ServiceName}*  
+                    📦 حجم: *{data.VolumeGb} گیگ*  
+                    👥 کاربران مجاز: *{data.UserCount} نفر*  
+                    ⏳ مدت زمان: *{data.DurationDays} روز*  
+                    💳 قیمت: `{data.Price:N0}` تومان  
+                    📎 کد پیگیری اشتراک: `{data.TrackingCode}`
                     
-                    📌 لطفاً کانفیگ مربوط به این سرویس را در پاسخ (ریپلای) به همین پیام برای کاربر ارسال نمایید.
+                    📌 لطفاً کانفیگ سرویس را برای کاربر ارسال کنید.
                     """;
 
                     await SendTextToAdminsAsync(botClient,
@@ -1006,21 +1027,23 @@ namespace DayvpnBotWebApi.Services
                     var data = successResult.Data!;
 
                     string adminMessage = $"""
-                        ✅ *خرید سرویس جدید با موفقیت ثبت شد!*
-                        
-                        👤 کاربر: *{data.UserFullName}*  
-                        🆔 شناسه عددی: `{data.TelegramId}`  
-                        💰 موجودی جدید: `{data.NewBalance:N0}` تومان  
-                        📅 زمان خرید: {PersianHelper.GetPersianCalendar(data.PurchasedAt)}
-                        
-                        🔹 سرویس: {data.ServiceName}  
-                        📦 حجم: {data.VolumeGb} گیگ  
-                        👥 کاربران مجاز: {data.UserCount} نفر  
-                        📆 مدت: {data.DurationDays} روز  
-                        💳 قیمت: `{data.Price:N0}` تومان
-                        
-                        📌 لطفاً کانفیگ سرویس را برای کاربر ارسال کنید.
-                        """;
+                    ✅ *خرید سرویس جدید با موفقیت ثبت شد!*
+                    
+                    👤 کاربر: *{data.UserFullName}*  
+                    🆔 شناسه عددی: `{data.TelegramId}`  
+                    💰 موجودی جدید: `{data.NewBalance:N0}` تومان  
+                    📅 زمان خرید: {PersianHelper.GetPersianCalendar(data.PurchasedAt)}
+                    
+                    🔖 نام اشتراک: *{data.SubscriptionName}*  
+                    📡 سرویس: *{data.ServiceName}*  
+                    📦 حجم: *{data.VolumeGb} گیگ*  
+                    👥 کاربران مجاز: *{data.UserCount} نفر*  
+                    ⏳ مدت زمان: *{data.DurationDays} روز*  
+                    💳 قیمت: `{data.Price:N0}` تومان  
+                    📎 کد پیگیری اشتراک: `{data.TrackingCode}`
+                    
+                    📌 لطفاً کانفیگ سرویس را برای کاربر ارسال کنید.
+                    """;
 
                     await SendTextToAdminsAsync(botClient,
                         adminMessage,
