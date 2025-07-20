@@ -4,7 +4,6 @@ using DayvpnBotWebApi.Shared;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
-using Microsoft.IdentityModel.Tokens;
 using System.Text.Json;
 using Telegram.Bot.Types;
 
