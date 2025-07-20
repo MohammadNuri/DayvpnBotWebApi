@@ -31,6 +31,7 @@ var redisPassword = Environment.GetEnvironmentVariable("REDIS_PASSWORD");
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = redisHost;
+
     options.InstanceName = "DayVPN_";
 });
 
