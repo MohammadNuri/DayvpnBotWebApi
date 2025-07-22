@@ -1,8 +1,10 @@
 ﻿using DayvpnBotWebApi.Core.Database;
+using DayvpnBotWebApi.Core.Entities;
 using DayvpnBotWebApi.Services;
-using Microsoft.EntityFrameworkCore;
-using Telegram.Bot;
 using DotNetEnv;
+using Microsoft.EntityFrameworkCore;
+using StackExchange.Redis;
+using Telegram.Bot;
 
 Env.Load();
 
@@ -11,8 +13,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 
 // TelegramBot Service
-builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient("7720992933:AAF3Ektj8ICnQ92gJrIn0FKsYCxrgKqENeg")); // Production
-//builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient("7859129571:AAHZAi8AXpMSjvSPHFQ433fJYAE-sdvPNG4")); // Developer
+builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient("7720992933:AAF3Ektj8ICnQ92gJrIn0FKsYCxrgKqENeg")); // Production Bot
+//builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient("7859129571:AAHZAi8AXpMSjvSPHFQ433fJYAE-sdvPNG4")); // Developer Bot
 builder.Services.AddHostedService<TelegramBotService>(); // سرویس Long Polling
 builder.Services.AddScoped<UserService>(); // User Service
 builder.Services.AddScoped<AppLogService>();
@@ -31,9 +33,11 @@ var redisPassword = Environment.GetEnvironmentVariable("REDIS_PASSWORD");
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = redisHost;
-
     options.InstanceName = "DayVPN_";
 });
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+    ConnectionMultiplexer.Connect(redisHost));
 
 // SQL Server Database
 //builder.Services.AddDbContext<AppDbContext>(options =>

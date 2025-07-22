@@ -143,9 +143,9 @@ namespace DayvpnBotWebApi.Services
                     ➕ افزایش داده شده: {requestedBalance:N0} تومان
                     💳 موجودی جدید: {newBalance:N0} تومان
 
-                    📅 زمان ثبت: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+                    📅 زمان ثبت: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}
                     """,
-                CreatedAt = DateTime.Now
+                CreatedAt = DateTime.UtcNow
             };
 
             await CreateLogAsync(log);
@@ -170,9 +170,8 @@ namespace DayvpnBotWebApi.Services
 
                     📘 دلیل: {reason}
 
-                    📅 زمان ثبت: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+                    📅 زمان ثبت: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}
                     """,
-                CreatedAt = DateTime.Now
             };
 
             await CreateLogAsync(log);
@@ -194,9 +193,9 @@ namespace DayvpnBotWebApi.Services
                 🔢 مبلغ درخواستی: {requestedBalance:N0} تومان
                 ⚠️ خطا: {errorMessage}
 
-                📅 زمان ثبت: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+                📅 زمان ثبت: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}
                 """,
-                CreatedAt = DateTime.Now
+                CreatedAt = DateTime.UtcNow
             };
 
             await CreateLogAsync(log);
@@ -226,9 +225,8 @@ namespace DayvpnBotWebApi.Services
                 💰 موجودی قبلی: {oldBalance:N0} تومان
                 💰 موجودی جدید: {newBalance:N0} تومان
 
-                📅 زمان ثبت: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+                📅 زمان ثبت: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}
                 """,
-                CreatedAt = DateTime.Now
             };
 
             await CreateLogAsync(log);
@@ -249,9 +247,9 @@ namespace DayvpnBotWebApi.Services
 
                 ⚠️ خطا: {errorMessage}
 
-                📅 زمان ثبت: {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+                📅 زمان ثبت: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}
                 """,
-                CreatedAt = DateTime.Now
+                CreatedAt = DateTime.UtcNow
             };
 
             await CreateLogAsync(log);

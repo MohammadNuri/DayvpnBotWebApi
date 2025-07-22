@@ -4,6 +4,8 @@ using DayvpnBotWebApi.Shared;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
+using Microsoft.VisualBasic;
+using StackExchange.Redis;
 using System.Text.Json;
 using Telegram.Bot.Types;
 
@@ -12,12 +14,14 @@ namespace DayvpnBotWebApi.Services
     public class RedisCacheManager
     {
         private readonly IDistributedCache _cache;
+        private readonly IDatabase _redisDb;
         private readonly AppDbContext _db;
 
-        public RedisCacheManager(IDistributedCache cache, AppDbContext db)
+        public RedisCacheManager(IDistributedCache cache, AppDbContext db, IConnectionMultiplexer redis)
         {
             _cache = cache;
             _db = db;
+            _redisDb = redis.GetDatabase();
         }
 
         public async Task<List<T>> GetAllAsync<T>(string key, TimeSpan? cacheDuration = null)
@@ -146,13 +150,27 @@ namespace DayvpnBotWebApi.Services
             return ServiceResult<T>.Failed();
         }
 
-
         public async Task<UserState?> GetUserStateAsync(long userId)
         {
             var user = await GetAsync<UserCacheClass>(RedisKeys.User(userId));
             if (user != null)
                 return user.State;
             return null;
+        }
+
+        public async Task<bool> IsUserRegisteredAsync(long telegramId, TimeSpan? cacheDuration = null)
+        {
+            var count = await _redisDb.SetLengthAsync(RedisKeys.UserIds);
+            if (count == 0)
+            {
+                var allUserIds = await _db.Users.Select(c => c.TelegramId).ToListAsync();
+                if (allUserIds.Any())
+                    await _redisDb.SetAddAsync(RedisKeys.UserIds, allUserIds.Select(x => (RedisValue)x).ToArray());
+            }
+
+            var q = await _redisDb.SetMembersAsync(RedisKeys.UserIds);
+
+            return await _redisDb.SetContainsAsync(RedisKeys.UserIds, telegramId);
         }
     }
 }

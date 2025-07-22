@@ -10,5 +10,6 @@
         public static string Wallet() => "wallet";
         public static string UsersList => "users:list";
         public static string ServicesList => "services:list";
+        public static string UserIds => "user:ids";
     }
 }

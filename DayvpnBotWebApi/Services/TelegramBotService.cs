@@ -1,6 +1,7 @@
 ﻿using DayvpnBotWebApi.Core.Entities;
 using DayvpnBotWebApi.Shared;
 using Microsoft.Extensions.Caching.Memory;
+using System.Runtime.InteropServices.Marshalling;
 using System.Text.RegularExpressions;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -56,9 +57,12 @@ namespace DayvpnBotWebApi.Services
             if (update?.Message?.Text != null)
             {
                 var message = update.Message;
+                var telegramId = message.Chat.Id;
 
                 // ثبت نام کاربر در صورت وجود
-                await SignupUserAsync(botClient, message);
+                bool isUserRegistered =  await _redisCache.IsUserRegisteredAsync(telegramId);
+                if (!isUserRegistered)
+                    await SignupUserAsync(botClient, message);
 
                 // لاگ کنسول برای دریافت هر نوع مسیج از بات
                 await ConsoleLogActions.ConsoleLogReceivedMessageAsync(message);
@@ -67,6 +71,10 @@ namespace DayvpnBotWebApi.Services
                 {
                     case "/start":
                         await StartAsync(botClient, update);
+                        break;
+
+                    case "/me":
+                        await SendProfileInfoAsync(botClient, update.CallbackQuery);
                         break;
 
                     case string data when data.StartsWith("/subscription_"):
@@ -578,8 +586,7 @@ namespace DayvpnBotWebApi.Services
 
             ServiceResult result = await _userService.RegisterUser(message);
 
-            if (result.IsSuccess)
-                await SendTextToAdminsAsync(botClient, result.Message);
+            await SendTextToAdminsAsync(botClient, result.Message);
         }
 
         private Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
