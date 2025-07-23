@@ -92,12 +92,13 @@ namespace DayvpnBotWebApi.Services
                         if (message.ReplyToMessage != null && message.Chat.Id == (long)Admins.Nouri)
                         {
                             var text = message.ReplyToMessage.Text;
+                            var safeMessageText = EscapeMarkdown(message.Text);
                             var match = Regex.Match(text, @"شناسه عددی:\s*(\d+)");
                             if (match.Success && long.TryParse(match.Groups[1].Value, out long userId))
                             {
                                 await botClient.SendMessage(
                                         chatId: userId,
-                                        text: message.Text,
+                                        text: safeMessageText,
                                         parseMode: ParseMode.Markdown
                                     );
 
@@ -956,7 +957,7 @@ namespace DayvpnBotWebApi.Services
                     💳 قیمت: `{data.Price:N0}` تومان  
                     📎 کد پیگیری اشتراک: `{data.TrackingCode}`
                     
-                    📌 لطفاً کانفیگ سرویس را برای کاربر ارسال کنید.
+                    📌 لطفاً با ریپلای این پیام، کانفیگ سرویس را برای کاربر ارسال کنید.
                     """;
 
                     await SendTextToAdminsAsync(botClient,
@@ -1056,15 +1057,11 @@ namespace DayvpnBotWebApi.Services
                     💳 قیمت: `{data.Price:N0}` تومان  
                     📎 کد پیگیری اشتراک: `{data.TrackingCode}`
                     
-                    📌 لطفاً کانفیگ سرویس را برای کاربر ارسال کنید.
+                    📌 لطفاً با ریپلای این پیام، کانفیگ سرویس را برای کاربر ارسال کنید.
                     """;
 
                     await SendTextToAdminsAsync(botClient,
-                        adminMessage,
-                        new List<AdminActionButton>
-                        {
-                                new("📤 ارسال کانفیگ به کاربر", $"send_config_{userId}")
-                        });
+                        adminMessage);
                 }
             }
             else
