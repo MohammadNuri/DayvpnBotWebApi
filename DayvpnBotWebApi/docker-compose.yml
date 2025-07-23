@@ -54,8 +54,8 @@ services:
       dockerfile: Dockerfile
     container_name: dayvpn-bot
     environment:
-      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=dayvpn;Username=postgres;Password=${POSTGRES_PASSWORD}
-      - Redis__Host=redis:6379,password=${REDIS_PASSWORD},connectTimeout=10000,connectRetry=5,abortConnect=false
+      - ConnectionStrings__DefaultConnection=Host=localhost;Port=5432;Database=dayvpn;Username=postgres;Password=${POSTGRES_PASSWORD}
+      - Redis__Host=localhost:6379,password=${REDIS_PASSWORD},connectTimeout=10000,connectRetry=5,abortConnect=false
     depends_on:
       db:
         condition: service_healthy

@@ -128,6 +128,7 @@ namespace DayvpnBotWebApi.Services
 
                             // اطلاعات کاربر برای ارسال به ادمین
                             string fullName = $"{message.Chat.FirstName} {message.Chat.LastName ?? ""}".Trim();
+                            string safeFullName = EscapeMarkdown(fullName);
                             string userIdStr = message.Chat.Id.ToString();
                             var walletCache = await _redisCache.GetAsync<WalletCacheClass>(RedisKeys.Wallet(message.Chat.Id));
                             if (walletCache == null)
@@ -136,7 +137,7 @@ namespace DayvpnBotWebApi.Services
                                 return;
                             }
 
-                            string caption = $"📥 درخواست پرداخت جدید دریافت شد.\n\n👤 نام کاربر: {fullName}\n🆔 آیدی عددی: {userIdStr}\n💳 مبلغ: {walletCache.RequestBalance:N0} تومان\n\n📌 لطفاً بررسی و تأیید کنید.";
+                            string caption = $"📥 درخواست پرداخت جدید دریافت شد.\n\n👤 نام کاربر: {safeFullName}\n🆔 آیدی عددی: {userIdStr}\n💳 مبلغ: {walletCache.RequestBalance:N0} تومان\n\n📌 لطفاً بررسی و تأیید کنید.";
 
                             // ارسال عکس به ادمین همراه با کپشن
                             using var adminStream = new MemoryStream(stream.ToArray()); // برای اطمینان دوباره بخونیم
@@ -661,7 +662,9 @@ namespace DayvpnBotWebApi.Services
         {
             string fullName = $"{message.Chat.FirstName} {message.Chat.LastName}";
 
-            string welcomeText = $"👋 سلام {fullName} عزیز!\n\n" +
+            string safeFullName = EscapeMarkdown(fullName);
+
+            string welcomeText = $"👋 سلام {safeFullName} عزیز!\n\n" +
                      "🤖 به **ربات DayVPN** خوش اومدی!\n\n" +
                      "📶 با DayVPN می‌تونی اشتراک VPN تهیه کنی و از سرورهای پرسرعت در کشورهای مختلف استفاده کنی.\n\n" +
                      "📱 قابل استفاده در: اندروید، ویندوز، آیفون و سایر دستگاه‌ها\n" +
@@ -935,10 +938,12 @@ namespace DayvpnBotWebApi.Services
 
                     var data = successResult.Data!;
 
+                    string safeFullName = EscapeMarkdown(data.UserFullName);
+
                     string adminMessage = $"""
                     ✅ *خرید سرویس جدید با موفقیت ثبت شد!*
                     
-                    👤 کاربر: *{data.UserFullName}*  
+                    👤 کاربر: *{safeFullName}*  
                     🆔 شناسه عددی: `{data.TelegramId}`  
                     💰 موجودی جدید: `{data.NewBalance:N0}` تومان  
                     📅 زمان خرید: {PersianHelper.GetPersianCalendar(data.PurchasedAt)}
@@ -1033,10 +1038,12 @@ namespace DayvpnBotWebApi.Services
                 {
                     var data = successResult.Data!;
 
+                    string safeFullName = EscapeMarkdown(data.UserFullName);
+
                     string adminMessage = $"""
                     ✅ *خرید سرویس جدید با موفقیت ثبت شد!*
                     
-                    👤 کاربر: *{data.UserFullName}*  
+                    👤 کاربر: *{safeFullName}*  
                     🆔 شناسه عددی: `{data.TelegramId}`  
                     💰 موجودی جدید: `{data.NewBalance:N0}` تومان  
                     📅 زمان خرید: {PersianHelper.GetPersianCalendar(data.PurchasedAt)}
@@ -1363,8 +1370,10 @@ namespace DayvpnBotWebApi.Services
                 return;
             }
 
+            string safeFullName = EscapeMarkdown(user.FullName ?? "کاربر ناشناس");
+
             string message =
-                "👤 *نام کاربری*: *" + user.FullName + "*\n" +
+                "👤 *نام کاربری*: *" + safeFullName + "*\n" +
                 "\u200F🆔 *شناسه کاربری*: `" + user.TelegramId + "`\n" +
                 "📦 *کل سرویس‌ها*: " + user.SubscriptionCount + " عدد\n\n" +
                 "🕒 *تاریخ عضویت*: " + PersianHelper.GetPersianCalendar(user.RegisterDate) + "\n" +

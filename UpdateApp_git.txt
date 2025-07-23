@@ -1,0 +1,17 @@
+git stash
+git pull https://mohammadnuri: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@github.com/MohammadNuri/DayvpnBotWebApi.git
+git stash pop
+
+git status
+git add .
+git commit -m "Resolve merge conflicts"
+
+
+// set remote pull github
+git remote set-url origin https://mohammadnuri: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@github.com/MohammadNuri/DayvpnBotWebApi.git
+
+
+docker compose down
+docker compose up --build -d
+
+docker-compose down && docker-compose build --no-cache && docker-compose up -d

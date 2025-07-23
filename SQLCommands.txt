@@ -1,0 +1,8 @@
+Clear Developers Data:
+
+Delete From AppLogs where UserId in(1,2)
+Delete From Subscriptions where UserId in(1,2)
+Delete From Transactions where UserId in(1,2)
+Delete From TransactionRequests where UserId in(1,2)
+
+
