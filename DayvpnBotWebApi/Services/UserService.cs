@@ -116,7 +116,9 @@ namespace DayvpnBotWebApi.Services
 
         public async Task<ServiceResult> RegisterUser(Message message)
         {
-            var existsUser = _db.Users.FirstOrDefaultAsync(c => c.TelegramId == message.Chat.Id);
+            var existsUser = await _db.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.TelegramId == message.Chat.Id);
 
             if(existsUser == null)
             {
@@ -140,7 +142,17 @@ namespace DayvpnBotWebApi.Services
                 return result;
             }
 
-            return ServiceResult.Failed("کاربر وجود دارد.");
+            string messageText = $"""
+            ❗️این کاربر قبلا ثبت نام کرده است
+
+            👤 نام: {existsUser.FirstName + " " + existsUser.LastName} 
+            🆔 شناسه تلگرام: {existsUser.TelegramId}
+            🗓 تاریخ عضویت: {existsUser.CreatedAt}
+            💰 موجودی: {existsUser.Balance:N0} تومان
+            🎟 تعداد اشتراک‌ها: {existsUser.SubscriptionCount}
+            """;
+
+            return ServiceResult.Failed(messageText);
         }
 
         public async Task<bool> CheckUserExists(long telegramId)
