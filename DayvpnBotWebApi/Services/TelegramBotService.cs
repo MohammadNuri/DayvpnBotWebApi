@@ -1279,11 +1279,13 @@ namespace DayvpnBotWebApi.Services
         {
             long[] adminIds = { (long)Admins.Nouri /*, Admins.OtherAdminId if needed */ };
 
+            string safeMessage = EscapeMarkdown(message);
+
             foreach (var adminId in adminIds)
             {
                 await botClient.SendMessage(
                     chatId: adminId,
-                    text: message,
+                    text: safeMessage,
                     parseMode: ParseMode.Markdown
                 );
             }
@@ -1455,6 +1457,28 @@ namespace DayvpnBotWebApi.Services
             await SendTextToAdminsAsync(botClient, adminMessage);
         }
 
+        private string EscapeMarkdown(string text)
+        {
+            return text
+                .Replace("_", "\\_")
+                .Replace("*", "\\*")
+                .Replace("[", "\\[")
+                .Replace("]", "\\]")
+                .Replace("(", "\\(")
+                .Replace(")", "\\)")
+                .Replace("~", "\\~")
+                .Replace("`", "\\`")
+                .Replace(">", "\\>")
+                .Replace("#", "\\#")
+                .Replace("+", "\\+")
+                .Replace("-", "\\-")
+                .Replace("=", "\\=")
+                .Replace("|", "\\|")
+                .Replace("{", "\\{")
+                .Replace("}", "\\}")
+                .Replace(".", "\\.")
+                .Replace("!", "\\!");
+        }
 
         private static readonly List<(string Name, string Volume)> Subscriptions = Enumerable.Range(1, 10)
             .Select(i => ($"{i * 2} گیگ", $"Sub {i}"))

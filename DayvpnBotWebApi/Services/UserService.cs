@@ -3,6 +3,7 @@ using DayvpnBotWebApi.Core.Entities;
 using DayvpnBotWebApi.Shared;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
+using StackExchange.Redis;
 using System.Linq.Expressions;
 using Telegram.Bot.Types;
 using User = DayvpnBotWebApi.Core.Entities.User;
@@ -17,13 +18,15 @@ namespace DayvpnBotWebApi.Services
         private readonly TransactionRequestService _transactionRequestService;
         private readonly RedisCacheManager _redisCache;
         private readonly IDistributedCache _cache;
+        private readonly IDatabase _redisDb;
 
         public UserService(AppDbContext db,
             AppLogService appLogService,
             TransactionService transactionService,
             TransactionRequestService transactionRequestService,
             RedisCacheManager redisCache,
-            IDistributedCache distributedCache)
+            IDistributedCache distributedCache,
+            IConnectionMultiplexer redis)
         {
             _db = db;
             _appLogService = appLogService;
@@ -31,6 +34,7 @@ namespace DayvpnBotWebApi.Services
             _transactionRequestService = transactionRequestService;
             _redisCache = redisCache;
             _cache = distributedCache;
+            _redisDb = redis.GetDatabase();
         }
 
         public async Task<List<User>> GetAllAsync()
@@ -112,24 +116,31 @@ namespace DayvpnBotWebApi.Services
 
         public async Task<ServiceResult> RegisterUser(Message message)
         {
-            User user = new()
+            var existsUser = _db.Users.FirstOrDefaultAsync(c => c.TelegramId == message.Chat.Id);
+
+            if(existsUser == null)
             {
-                TelegramId = message.Chat.Id,
-                FirstName = message.Chat.FirstName ?? string.Empty,
-                LastName = message.Chat.LastName ?? string.Empty,
-                RegistrationDate = DateTime.UtcNow,
-                Balance = 0,
-            };
+                User user = new()
+                {
+                    TelegramId = message.Chat.Id,
+                    FirstName = message.Chat.FirstName ?? string.Empty,
+                    LastName = message.Chat.LastName ?? string.Empty,
+                    RegistrationDate = DateTime.UtcNow,
+                    Balance = 0,
+                };
 
-            var result = await CreateAsync(user);
+                var result = await CreateAsync(user);
 
-            if (result.IsSuccess)
-                await _cache.SetStringAsync("user:ids", Convert.ToString(user.TelegramId));
+                if (result.IsSuccess)
+                    await _redisDb.SetAddAsync(RedisKeys.UserIds, (RedisValue)user.TelegramId);
 
-            Console.Write($"Success: {result.IsSuccess}");
-            Console.Write($"Message: {result.Message}");
+                Console.Write($"Success: {result.IsSuccess}");
+                Console.Write($"Message: {result.Message}");
 
-            return result;
+                return result;
+            }
+
+            return ServiceResult.Failed("کاربر وجود دارد.");
         }
 
         public async Task<bool> CheckUserExists(long telegramId)

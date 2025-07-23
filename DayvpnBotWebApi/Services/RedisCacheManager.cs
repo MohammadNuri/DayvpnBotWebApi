@@ -168,8 +168,6 @@ namespace DayvpnBotWebApi.Services
                     await _redisDb.SetAddAsync(RedisKeys.UserIds, allUserIds.Select(x => (RedisValue)x).ToArray());
             }
 
-            var q = await _redisDb.SetMembersAsync(RedisKeys.UserIds);
-
             return await _redisDb.SetContainsAsync(RedisKeys.UserIds, telegramId);
         }
     }
