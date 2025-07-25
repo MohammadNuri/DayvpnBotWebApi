@@ -10,23 +10,22 @@
 		<PackageReference Include="DotNetEnv" Version="3.1.1" />
 		<PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.5" />
 
-		<!-- تغییر نسخه‌های EntityFrameworkCore به 8.x برای سازگاری با .NET 8.0 -->
-		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.1" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.1">
+		<!-- تنظیم نسخه هماهنگ برای EntityFrameworkCore -->
+		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.2" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.2">
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 			<PrivateAssets>all</PrivateAssets>
 		</PackageReference>
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.6">
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.2">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
 
-		<!-- تغییر نسخه Redis به نسخه سازگار با .NET 8.0 -->
-		<PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="8.0.1" />
+		<!-- تنظیم نسخه هماهنگ برای Npgsql -->
+		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.2" />
 
-		<!-- تغییر نسخه Npgsql به 8.x برای سازگاری با .NET 8.0 -->
-		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.1" />
-
+		<!-- سایر پکیج‌ها -->
+		<PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="9.0.7" />
 		<PackageReference Include="StackExchange.Redis" Version="2.8.41" />
 		<PackageReference Include="System.IO" Version="4.3.0" />
 		<PackageReference Include="Telegram.Bot" Version="22.5.1" />
