@@ -1,8 +1,5 @@
 ﻿using DayvpnBotWebApi.Core.Entities;
 using Microsoft.EntityFrameworkCore;
-using System.Collections.Generic;
-using System.IO;
-using System.Reflection.Emit;
 
 namespace DayvpnBotWebApi.Core.Database
 {

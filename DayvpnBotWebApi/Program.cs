@@ -1,5 +1,4 @@
 ﻿using DayvpnBotWebApi.Core.Database;
-using DayvpnBotWebApi.Core.Entities;
 using DayvpnBotWebApi.Services;
 using DotNetEnv;
 using Microsoft.EntityFrameworkCore;
@@ -13,8 +12,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 
 // TelegramBot Service
-//builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient("7720992933:AAF3Ektj8ICnQ92gJrIn0FKsYCxrgKqENeg")); // Production Bot
-builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient("7859129571:AAHZAi8AXpMSjvSPHFQ433fJYAE-sdvPNG4")); // Developer Bot
+builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient("7720992933:AAF3Ektj8ICnQ92gJrIn0FKsYCxrgKqENeg")); // Production Bot
+//builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient("7859129571:AAHZAi8AXpMSjvSPHFQ433fJYAE-sdvPNG4")); // Developer Bot
 builder.Services.AddHostedService<TelegramBotService>(); // سرویس Long Polling
 builder.Services.AddScoped<UserService>(); // User Service
 builder.Services.AddScoped<AppLogService>();
@@ -39,21 +38,16 @@ builder.Services.AddStackExchangeRedisCache(options =>
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect(redisHost));
 
-// SQL Server Database
-//builder.Services.AddDbContext<AppDbContext>(options =>
-//    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-
 // PosgreSQL Server Database
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 var app = builder.Build();
 
-// Auto-Migration
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext> ();
-    db.Database.Migrate(); 
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
 }
 
 if (app.Environment.IsDevelopment())
