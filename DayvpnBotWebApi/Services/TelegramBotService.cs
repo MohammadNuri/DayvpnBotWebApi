@@ -1466,24 +1466,7 @@ namespace DayvpnBotWebApi.Services
         private string EscapeMarkdown(string text)
         {
             return text
-                .Replace("_", "\\_")
-                .Replace("*", "\\*")
-                .Replace("[", "\\[")
-                .Replace("]", "\\]")
-                .Replace("(", "\\(")
-                .Replace(")", "\\)")
-                .Replace("~", "\\~")
-                .Replace("`", "\\`")
-                .Replace(">", "\\>")
-                .Replace("#", "\\#")
-                .Replace("+", "\\+")
-                .Replace("-", "\\-")
-                .Replace("=", "\\=")
-                .Replace("|", "\\|")
-                .Replace("{", "\\{")
-                .Replace("}", "\\}")
-                .Replace(".", "\\.")
-                .Replace("!", "\\!");
+                .Replace("_", "-");
         }
 
         private static readonly List<(string Name, string Volume)> Subscriptions = Enumerable.Range(1, 10)
