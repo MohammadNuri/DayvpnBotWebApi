@@ -10,5 +10,6 @@
         public string? Description { get; set; }
 
         public virtual ICollection<Subscription> Subscriptions { get; set; }
+        public virtual ICollection<SubscriptionRequest> SubscriptionRequests { get; set; }
     }
 }
