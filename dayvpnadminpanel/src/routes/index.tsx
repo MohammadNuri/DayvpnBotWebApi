@@ -1,14 +1,12 @@
 // index.tsx
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Layout from "../layout/Layout";
-import Dashboard from "../pages/Dashboard";
+import Dashboard from "../layout/Dashboard";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Dashboard />} />
+        <Route path="/" element={<Dashboard />}>
           {/* سایر صفحات */}
         </Route>
       </Routes>

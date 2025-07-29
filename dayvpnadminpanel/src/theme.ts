@@ -1,7 +1,7 @@
 import { createTheme } from '@mui/material/styles';
 
 const theme = createTheme({
-  direction: 'rtl',
+  direction: 'ltr',
   typography: {
     fontFamily: 'IRANSans, Roboto, Arial',
   },
