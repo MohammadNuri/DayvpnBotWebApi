@@ -119,7 +119,7 @@ namespace DayvpnBotWebApi.Services
 
                 لطفاً مجدداً تلاش کنید یا با پشتیبانی تماس بگیرید.
 
-                🆘 پشتیبانی: @DarvyXe
+                🆘 پشتیبانی: @DayvpnSupport
                 """);
 
             var user = await _db.Users.FirstOrDefaultAsync(u => u.TelegramId == telegramId);
@@ -132,7 +132,7 @@ namespace DayvpnBotWebApi.Services
 
                 لطفاً برای بررسی بیشتر با پشتیبانی در تماس باشید.
 
-                🆘 پشتیبانی: @DarvyXe
+                🆘 پشتیبانی: @DayvpnSupport
                 """);
 
             var service = await _servicesService.GetByIdAsync(subscriptionRequest.ServiceId);
@@ -146,7 +146,7 @@ namespace DayvpnBotWebApi.Services
                 لطفاً ابتدا *موجودی خود را افزایش دهید* و سپس دوباره اقدام به خرید کنید.
 
                 برای افزایش موجودی، از گزینه‌های موجود در منوی ربات استفاده کنید یا به پشتیبانی پیام دهید.  
-                🆘 پشتیبانی: @DarvyXe
+                🆘 پشتیبانی: @DayvpnSupport
                 """);
 
             try
@@ -222,7 +222,7 @@ namespace DayvpnBotWebApi.Services
 🕓 لطفاً کمی صبر کنید تا سرویس اختصاصی شما ارسال شود.  
 در صورت بروز تأخیر یا مشکل، حتماً با پشتیبانی در تماس باشید.
 
-🆘 پشتیبانی: @DarvyXe
+🆘 پشتیبانی: @DayvpnSupport
 
 🔎 کد پیگیری شما: `{trackingCode}`
 """);
@@ -244,7 +244,7 @@ namespace DayvpnBotWebApi.Services
                 لطفاً مجدداً تلاش کنید.  
                 در صورت تکرار خطا، مشکل را با پشتیبانی در میان بگذارید.
 
-                🆘 پشتیبانی: @DarvyXe
+                🆘 پشتیبانی: @DayvpnSupport
                 """);
             }
         }
