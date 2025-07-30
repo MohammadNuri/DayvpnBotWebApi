@@ -15,13 +15,15 @@ namespace DayvpnBotWebApi.Services
         private readonly RedisCacheManager _redisCache;
         private readonly TransactionRequestService _transactionRequestService;
         private readonly TransactionService _transactionService;
+        private readonly SubscriptionRequestService _subscriptionRequestService;
 
         public SubscriptionService(AppDbContext db,
             AppLogService appLogService,
             ServicesService servicesService,
             RedisCacheManager redisCache,
             TransactionService transactionService,
-            TransactionRequestService transactionRequestService)
+            TransactionRequestService transactionRequestService,
+            SubscriptionRequestService subscriptionRequestService)
         {
             _db = db;
             _appLogService = appLogService;
@@ -29,6 +31,7 @@ namespace DayvpnBotWebApi.Services
             _redisCache = redisCache;
             _transactionRequestService = transactionRequestService;
             _transactionService = transactionService;
+            _subscriptionRequestService = subscriptionRequestService;
 
         }
 
@@ -109,7 +112,11 @@ namespace DayvpnBotWebApi.Services
 
         public async Task<ServiceResult<SubscriptionResultDto>> InsertSubscription(long telegramId)
         {
-            var subscriptionRequest = await _redisCache.GetAsync<SubscriptionCacheClass>(RedisKeys.Subscription(telegramId));
+            SubscriptionCacheClass? subscriptionRequest = null;
+            subscriptionRequest = await _redisCache.GetAsync<SubscriptionCacheClass>(RedisKeys.Subscription(telegramId));
+            if (subscriptionRequest == null)
+                subscriptionRequest = await _subscriptionRequestService.GetByUserIdAsync(telegramId);
+
             if (subscriptionRequest == null)
                 return ServiceResult<SubscriptionResultDto>.Failed("""
                 ❌ *خطا در پردازش درخواست شما!*
@@ -171,6 +178,8 @@ namespace DayvpnBotWebApi.Services
                 user.Balance -= service.Price;
 
                 await _db.SaveChangesAsync();
+                if (subscriptionRequest.SubscriptionRequestId.HasValue)
+                    await _subscriptionRequestService.DeleteAsync(subscriptionRequest.SubscriptionRequestId.Value);
 
                 string reason = $"✅ Subscription خریداری شد: UserId={user.Id}, ServiceId={service.Id}, Volume={service.DataQuotaGB}GB";
 
@@ -237,6 +246,9 @@ namespace DayvpnBotWebApi.Services
 
                 await _redisCache.InvalidateAsync(RedisKeys.User(telegramId));
                 await _redisCache.InvalidateAsync(RedisKeys.Subscription(telegramId));
+
+                if(subscriptionRequest.SubscriptionRequestId.HasValue)
+                    await _subscriptionRequestService.DeleteAsync(subscriptionRequest.SubscriptionRequestId.Value);
 
                 return ServiceResult<SubscriptionResultDto>.Failed("""
                 ❌ *خطایی هنگام ثبت خرید شما رخ داد!*

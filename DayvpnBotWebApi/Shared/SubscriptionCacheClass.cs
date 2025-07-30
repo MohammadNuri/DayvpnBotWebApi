@@ -9,5 +9,6 @@
         public int AllowedUsersCount { get; set; }
         public decimal Price { get; set; }
         public string RequestedSubscriptioName { get; set; } = string.Empty;
+        public int? SubscriptionRequestId { get; set; } = null;
     }
 }

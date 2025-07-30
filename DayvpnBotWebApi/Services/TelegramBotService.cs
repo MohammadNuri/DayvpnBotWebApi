@@ -60,7 +60,7 @@ namespace DayvpnBotWebApi.Services
                 var telegramId = message.Chat.Id;
 
                 // ثبت نام کاربر در صورت وجود
-                bool isUserRegistered =  await _redisCache.IsUserRegisteredAsync(telegramId);
+                bool isUserRegistered = await _redisCache.IsUserRegisteredAsync(telegramId);
                 if (!isUserRegistered)
                     await SignupUserAsync(botClient, message);
 
@@ -854,6 +854,8 @@ namespace DayvpnBotWebApi.Services
 
             using var scope = _scopeFactory.CreateScope();
             var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
+            var _subscriptionRequestService = scope.ServiceProvider.GetRequiredService<SubscriptionRequestService>();
+            var _userService = scope.ServiceProvider.GetRequiredService<UserService>();
 
             if (await _redisCache.ExistsAsync(RedisKeys.Subscription(userId)))
             {
@@ -865,6 +867,7 @@ namespace DayvpnBotWebApi.Services
                         c.RequestedSubscriptioName = message.Text;
                         await Task.CompletedTask;
                     });
+
                     if (!updateResult.IsSuccess)
                     {
                         await SendRestartMessageToUser(botClient, message);
@@ -872,6 +875,17 @@ namespace DayvpnBotWebApi.Services
                     }
 
                     var subscriptionRequest = updateResult.Data;
+
+                    var user = await _userService.GetUserProfileByTelegramIdAsync(userId);
+
+                    // Save the SubscriptionRequest in database
+                    var result = await _subscriptionRequestService.CreateAsync(new SubscriptionRequest()
+                    {
+                        ServiceId = subscriptionRequest.ServiceId,
+                        UserId = user.Id,
+                        SubscriptionName = subscriptionRequest.RequestedSubscriptioName,
+                        Status = Status.InProgress
+                    });
 
                     if (subscriptionRequest != null)
                     {
@@ -1021,8 +1035,21 @@ namespace DayvpnBotWebApi.Services
         {
             using var scope = _scopeFactory.CreateScope();
             var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
+            var _subscriptionRequestService = scope.ServiceProvider.GetRequiredService<SubscriptionRequestService>();
+
+            bool isValid = false;
 
             if (await _redisCache.ExistsAsync(RedisKeys.Subscription(userId)))
+                isValid = true;
+
+            SubscriptionRequest? subscriptionRequest = null;
+
+            if (!isValid)
+            {
+                isValid = await _subscriptionRequestService.ExistsAsync(userId);
+            }
+
+            if (isValid)
             {
                 var _subscriptionService = scope.ServiceProvider.GetRequiredService<SubscriptionService>();
 
@@ -1062,6 +1089,10 @@ namespace DayvpnBotWebApi.Services
 
                     await SendTextToAdminsAsync(botClient,
                         adminMessage);
+                }
+                else
+                {
+                    await SendRestartMessageToUser(botClient, callbackQuery);
                 }
             }
             else

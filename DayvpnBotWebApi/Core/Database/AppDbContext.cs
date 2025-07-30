@@ -14,6 +14,8 @@ namespace DayvpnBotWebApi.Core.Database
         public DbSet<Service> Services { get; set; }
         public DbSet<TransactionRequest> TransactionRequests { get; set; }
         public DbSet<Transaction> Transactions { get; set; }
+        public DbSet<SubscriptionRequest> SubscriptionRequests { get; set; }
+
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

@@ -28,7 +28,7 @@ namespace DayvpnBotWebApi.Services
             where T : BaseEntity
         {
             var cached = await _cache.GetStringAsync(key);
-            if (!string.IsNullOrEmpty(cached))
+            if (cached != null && !string.IsNullOrEmpty(cached) && cached != "[]")
                 return JsonSerializer.Deserialize<List<T>>(cached)!;
 
             var data = await _db.Set<T>().ToListAsync();

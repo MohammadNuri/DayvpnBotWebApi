@@ -12,6 +12,7 @@
 
         public virtual ICollection<Subscription> Subscriptions { get; set; }
         public virtual ICollection<TransactionRequest> TransactionRequests { get; set; }
+        public virtual ICollection<SubscriptionRequest> SubscriptionRequests { get; set; }
         public virtual ICollection<Transaction> Transactions { get; set; }
     }
 }
