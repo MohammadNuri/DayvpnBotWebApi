@@ -104,6 +104,28 @@ try
 
     Log.Information("PostgreSQL connection string found");
 
+    var rawUrl = builder.Configuration.GetConnectionString("DefaultConnection");
+
+    if (!string.IsNullOrWhiteSpace(rawUrl) && rawUrl.StartsWith("postgres"))
+    {
+        var uri = new Uri(rawUrl);
+        var userInfo = uri.UserInfo.Split(':', 2);
+
+        var npgsql = new Npgsql.NpgsqlConnectionStringBuilder
+        {
+            Host = uri.Host,
+            Port = uri.Port,
+            Database = uri.AbsolutePath.TrimStart('/'),
+            Username = userInfo[0],
+            Password = userInfo[1],
+            SslMode = Npgsql.SslMode.Require,
+            TrustServerCertificate = true
+        }.ToString();
+
+        builder.Configuration["ConnectionStrings:DefaultConnection"] = npgsql;
+    }
+
+
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseNpgsql(connectionString));
 
@@ -120,7 +142,10 @@ try
     using (var scope = app.Services.CreateScope())
     {
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        db.Database.Migrate();
+        if (app.Environment.IsDevelopment())
+        {
+            db.Database.Migrate();
+        }
     }
     Log.Information("Database migration completed");
 
