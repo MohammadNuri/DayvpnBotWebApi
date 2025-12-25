@@ -13,13 +13,13 @@ namespace DayvpnBotWebApi.Services
 {
     public class TelegramBotService : IHostedService
     {
-        private readonly ITelegramBotClient _botClient;
+        //private readonly ITelegramBotClient _botClient;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IMemoryCache _memoryCache;
 
-        public TelegramBotService(ITelegramBotClient botClient, IServiceScopeFactory scopeFactory)
+        public TelegramBotService(IServiceScopeFactory scopeFactory)//ITelegramBotClient botClient
         {
-            _botClient = botClient;
+            //_botClient = botClient;
             _scopeFactory = scopeFactory;
         }
 
@@ -31,12 +31,12 @@ namespace DayvpnBotWebApi.Services
                 AllowedUpdates = Array.Empty<UpdateType>() // همه نوع آپدیت رو دریافت کن
             };
 
-            _botClient.StartReceiving(
-                updateHandler: HandleUpdateAsync,
-                errorHandler: HandleErrorAsync,
-                receiverOptions: receiverOptions,
-                cancellationToken: cancellationToken
-            );
+            //_botClient.StartReceiving(
+            //    updateHandler: HandleUpdateAsync,
+            //    errorHandler: HandleErrorAsync,
+            //    receiverOptions: receiverOptions,
+            //    cancellationToken: cancellationToken
+            //);
 
             Console.WriteLine("DayVPN Bot Started..!");
             return Task.CompletedTask;
@@ -48,7 +48,7 @@ namespace DayvpnBotWebApi.Services
             return Task.CompletedTask;
         }
 
-        private async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
+        public async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
         {
             using var scope = _scopeFactory.CreateScope();
             var _redisCache = scope.ServiceProvider.GetRequiredService<RedisCacheManager>();
