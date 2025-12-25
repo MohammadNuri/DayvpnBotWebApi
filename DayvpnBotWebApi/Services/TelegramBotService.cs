@@ -223,7 +223,7 @@ namespace DayvpnBotWebApi.Services
 
 لطفاً مجدداً تلاش کنید یا برای بررسی دقیق‌تر با پشتیبانی در ارتباط باشید.
 
-🆘 آیدی پشتیبانی: @DarvyXe
+🆘 آیدی پشتیبانی: @DayvpnSupport
 """,
                             parseMode: ParseMode.Markdown
                         );
@@ -294,7 +294,7 @@ namespace DayvpnBotWebApi.Services
                     
                     🛠 برای راهنمایی بیشتر می‌توانید با پشتیبانی در تماس باشید.
                     
-                    🆘 آیدی پشتیبانی: @DarvyXe
+                    🆘 آیدی پشتیبانی: @DayvpnSupport
                     """,
                         parseMode: ParseMode.Markdown,
                         replyMarkup: new InlineKeyboardMarkup(new[]
@@ -557,7 +557,7 @@ namespace DayvpnBotWebApi.Services
             string text = "❗ خطایی رخ داده یا زمان انجام عملیات شما منقضی شده است.\n\n" +
                           "لطفاً با ارسال دستور /start مجدداً فرایند را از ابتدا آغاز کنید.\n\n" +
                           "در صورت بروز مشکل، با پشتیبانی تماس بگیرید:\n" +
-                          "@DarvyXe";
+                          "@DayvpnSupport";
 
             await botClient.SendMessage(
                 chatId: message.Chat.Id,
@@ -572,7 +572,7 @@ namespace DayvpnBotWebApi.Services
             string text = "❗ خطایی رخ داده یا زمان انجام عملیات شما منقضی شده است.\n\n" +
                           "لطفاً با ارسال دستور /start مجدداً فرایند را از ابتدا آغاز کنید.\n\n" +
                           "در صورت بروز مشکل، با پشتیبانی تماس بگیرید:\n" +
-                          "@DarvyXe";
+                          "@DayvpnSupport";
 
             await botClient.SendMessage(
                 chatId: message.Chat.Id,
