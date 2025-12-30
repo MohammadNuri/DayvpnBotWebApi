@@ -31,6 +31,8 @@ namespace DayvpnBotWebApi.Services
                 AllowedUpdates = Array.Empty<UpdateType>() // همه نوع آپدیت رو دریافت کن
             };
 
+            _botClient.DeleteWebhook(dropPendingUpdates: true);
+
             _botClient.StartReceiving(
                 updateHandler: HandleUpdateAsync,
                 errorHandler: HandleErrorAsync,
