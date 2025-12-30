@@ -1,22 +1,24 @@
-﻿# مرحله 1: بیس (Runtime فقط برای اجرای اپلیکیشن)
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
-WORKDIR /app
-
-# مرحله 2: بیلد (شامل SDK برای build, restore و publish)
+﻿# Stage 1: build
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# کپی سورس‌کد به مرحله build
-COPY . .
-
-# بازیابی پکیج‌ها
+# Copy only project files first (to cache restore)
+COPY ["DayvpnBotWebApi.csproj", "./"]
 RUN dotnet restore "DayvpnBotWebApi.csproj"
 
-# پابلیش اپلیکیشن
+# Copy remaining files and publish
+COPY . .
 RUN dotnet publish "DayvpnBotWebApi.csproj" -c Release -o /app/publish
 
-# مرحله 3: انتقال خروجی پابلیش به مرحله نهایی
-FROM base AS final
+# Stage 2: runtime
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
+
+# Set environment variable for correct HTTP port
+ENV ASPNETCORE_URLS=http://+:80
+
 COPY --from=build /app/publish .
+
+EXPOSE 80
+
 ENTRYPOINT ["dotnet", "DayvpnBotWebApi.dll"]
