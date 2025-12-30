@@ -17,7 +17,7 @@ steps:
     cd DayvpnBotWebApi
 
     echo "Stopping existing containers..."
-    docker compose down || true
+    docker compose down --remove-orphans
 
     echo "Building and starting services..."
     docker compose up -d --build
