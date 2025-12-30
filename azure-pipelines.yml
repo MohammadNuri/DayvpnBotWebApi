@@ -4,26 +4,26 @@ trigger:
 pool:
   name: linux-wsl-pool
 
-variables:
-  imageName: dayvpn-bot-api
-  containerName: dayvpn-bot
-
 steps:
 - checkout: self
 
+# Ensure Docker daemon is reachable (safety check)
 - script: |
-    docker build \
-      -f DayvpnBotWebApi/Dockerfile \
-      -t $(imageName):latest \
-      DayvpnBotWebApi
-  displayName: Build Docker Image
+    docker info
+  displayName: Check Docker daemon
 
+# Build and run full stack using docker-compose
 - script: |
-    docker stop $(containerName) || true
-    docker rm $(containerName) || true
+    cd DayvpnBotWebApi
 
-    docker run -d \
-      --name $(containerName) \
-      -p 8080:80 \
-      $(imageName):latest
-  displayName: Run Container
+    echo "Stopping existing containers..."
+    docker compose down --remove-orphans
+
+    echo "Building and starting services..."
+    docker compose up -d --build
+  displayName: Run full stack with docker-compose
+
+# Optional: show running containers (for logs/debug)
+- script: |
+    docker ps
+  displayName: Show running containers
