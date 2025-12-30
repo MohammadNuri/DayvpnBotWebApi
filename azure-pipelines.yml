@@ -1,0 +1,29 @@
+trigger:
+- master
+
+pool:
+  name: linux-wsl-pool
+
+variables:
+  imageName: dayvpn-bot-api
+  containerName: dayvpn-bot
+
+steps:
+- checkout: self
+
+- script: |
+    docker build \
+      -f DayvpnBotWebApi/Dockerfile \
+      -t $(imageName):latest \
+      DayvpnBotWebApi
+  displayName: Build Docker Image
+
+- script: |
+    docker stop $(containerName) || true
+    docker rm $(containerName) || true
+
+    docker run -d \
+      --name $(containerName) \
+      -p 8080:80 \
+      $(imageName):latest
+  displayName: Run Container
