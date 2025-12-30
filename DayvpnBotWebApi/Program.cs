@@ -17,11 +17,13 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
 {
     var botToken = builder.Configuration["Developer:BotToken"];
 
-    // V2Ray SOCKS5 proxy on Windows host
     var proxy = new HttpToSocks5Proxy(
-        "host.docker.internal", // IMPORTANT: Windows host
-        10808                  // V2Ray port
-    );
+        "host.docker.internal",
+        10808
+    )
+    {
+        ResolveHostnamesLocally = false // 🔥 CRITICAL
+    };
 
     var handler = new HttpClientHandler
     {
@@ -29,7 +31,10 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
         UseProxy = true
     };
 
-    var httpClient = new HttpClient(handler, disposeHandler: true);
+    var httpClient = new HttpClient(handler)
+    {
+        Timeout = TimeSpan.FromSeconds(300)
+    };
 
     return new TelegramBotClient(botToken, httpClient);
 });
