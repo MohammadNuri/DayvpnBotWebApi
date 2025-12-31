@@ -675,7 +675,12 @@ namespace DayvpnBotWebApi.Services
                      "🌍 کشورهای پشتیبانی‌شده: 🇩🇪 🇳🇱 🇺🇸 🇫🇷 🇹🇷 🇫🇮\n\n" +
                      "👇 برای شروع یکی از گزینه‌های زیر رو انتخاب کن:";
 
-            string photoPath = Path.Combine(Directory.GetCurrentDirectory(), "Src", "Images", "DayVPN.jpg");
+            var photoPath = Path.Combine(
+                AppContext.BaseDirectory,
+                "Assets",
+                "Images",
+                "DayVPN.jpg"
+            );
 
             await using var stream = File.OpenRead(photoPath);
 
