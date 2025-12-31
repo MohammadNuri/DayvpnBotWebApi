@@ -365,3 +365,6 @@ FodyWeavers.xsd
 /GitPull.txt
 /DayvpnBotWebApi/Program.cs
 /SSH VPS.txt
+
+# sing-box runtime config
+singbox/config.json
