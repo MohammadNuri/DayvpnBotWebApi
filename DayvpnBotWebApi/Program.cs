@@ -2,8 +2,9 @@
 using DayvpnBotWebApi.Services;
 using DotNetEnv;
 using Microsoft.EntityFrameworkCore;
-using StackExchange.Redis;
+using Microsoft.Extensions.DependencyInjection;
 using MihaZupan;
+using StackExchange.Redis;
 using Telegram.Bot;
 
 Env.Load();
@@ -13,32 +14,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 
 // TelegramBot Service
-builder.Services.AddSingleton<ITelegramBotClient>(sp =>
-{
-    var botToken = builder.Configuration["Developer:BotToken"];
-
-    var proxy = new HttpToSocks5Proxy(
-        "host.docker.internal",
-        10808
-    )
-    {
-        ResolveHostnamesLocally = false // 🔥 CRITICAL
-    };
-
-    var handler = new HttpClientHandler
-    {
-        Proxy = proxy,
-        UseProxy = true
-    };
-
-    var httpClient = new HttpClient(handler)
-    {
-        Timeout = TimeSpan.FromSeconds(300)
-    };
-
-    return new TelegramBotClient(botToken, httpClient);
-});
-
+var botToken = builder.Configuration["Developer:BotToken"];
+builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(botToken));
 builder.Services.AddHostedService<TelegramBotService>(); // سرویس Long Polling
 builder.Services.AddScoped<UserService>(); // User Service
 builder.Services.AddScoped<AppLogService>();
