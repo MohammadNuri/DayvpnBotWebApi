@@ -50,6 +50,10 @@ services:
       dockerfile: Dockerfile
     container_name: dayvpn-bot
     environment:
+      - http_proxy=http://host.docker.internal:7890
+      - https_proxy=http://host.docker.internal:7890
+      - HTTP_PROXY=http://host.docker.internal:7890
+      - HTTPS_PROXY=http://host.docker.internal:7890
       # IMPORTANT: use service names, NOT localhost
       - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=dayvpn;Username=postgres;Password=${POSTGRES_PASSWORD}
       - Redis__Host=redis:6379,password=${REDIS_PASSWORD},connectTimeout=10000,connectRetry=5,abortConnect=false
