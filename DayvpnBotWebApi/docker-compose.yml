@@ -2,7 +2,7 @@
 
 services:
   sing-box:
-    image: ghcr.io/sagernet/sing-box:latest
+    image: darvyxe/sing-box:latest
     container_name: sing-box
     command: run -c /config/config.json
     volumes:
