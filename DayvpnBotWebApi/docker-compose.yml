@@ -1,15 +1,12 @@
-﻿version: "3.9"
-
-services:
+﻿services:
   sing-box:
     image: darvyxe/sing-box:latest
     container_name: sing-box
     command: run -c /config/config.json
     volumes:
-      - ./singbox/config.json:/config/config.json:ro
-    ports:
-      - "7890:7890"   # optional, for host debugging
+      - /opt/singbox:/config:ro
     restart: unless-stopped
+    # ❌ ports حذف شد (CI-safe)
 
   db:
     image: postgres:15
@@ -46,7 +43,6 @@ services:
       dockerfile: Dockerfile
     container_name: dayvpn-bot
     environment:
-      # 🔥 PROXY (THIS IS THE KEY)
       HTTP_PROXY: http://sing-box:7890
       HTTPS_PROXY: http://sing-box:7890
       http_proxy: http://sing-box:7890
